@@ -47,14 +47,14 @@ jobs:
       - name: Resolve Flutter packages
         run: flutter pub get
 
-      - name: Build debug APK
-        run: flutter build apk --debug
+      - name: Build optimized APKs by CPU architecture
+        run: flutter build apk --release --split-per-abi
 
-      - name: Upload APK for this run
+      - name: Upload APKs for this run
         uses: actions/upload-artifact@v4
         with:
-          name: cmmr-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: cmmr-release-apks
+          path: build/app/outputs/flutter-apk/*-release.apk
           if-no-files-found: error
           retention-days: 7
 
@@ -65,18 +65,24 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download APK from build
+      - name: Download APKs from build
         uses: actions/download-artifact@v4
         with:
-          name: cmmr-debug-apk
+          name: cmmr-release-apks
           path: release-assets
 
-      - name: Publish APK to GitHub Release
+      - name: Publish APKs to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           target_commitish: ${{ github.sha }}
           name: CMMR ${{ inputs.release_tag || github.ref_name }}
-          generate_release_notes: true
+          body: |
+            Optimized release APKs split by CPU architecture:
+            - `armeabi-v7a`: older 32-bit ARM devices
+            - `arm64-v8a`: most modern Android phones
+            - `x86_64`: x86_64 devices and emulators
+
+            Install the APK matching your device architecture.
           fail_on_unmatched_files: true
-          files: release-assets/app-debug.apk
+          files: release-assets/*-release.apk
