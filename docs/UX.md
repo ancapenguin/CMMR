@@ -28,13 +28,42 @@ Timeline:
 - show frame thumbnails when available,
 - in/out handles must have large invisible hit targets,
 - tapping/dragging the filmstrip seeks,
-- the playhead must remain visually distinct from trim handles.
+- the playhead must remain visually distinct from trim handles,
+- support pinch-to-zoom on the timeline,
+- zoom changes temporal scale, not the underlying edit,
+- allow zooming far enough to make sub-second and eventually frame-level edits practical,
+- keep the playhead anchored under the fingers/center while zooming so the user does not lose context,
+- adapt thumbnail density and time ruler labels to the zoom level,
+- avoid generating full-resolution thumbnails for every frame; use level-of-detail/cached thumbnails,
+- provide sensible min/max zoom bounds and preserve zoom while switching editing tools.
+
+At coarse zoom, show minutes/seconds and sparse thumbnails.
+At fine zoom, show fractions of a second / frame-oriented granularity and denser thumbnails.
+
+The timeline must feel like an editor timeline, not a RangeSlider with pictures.
 
 ## Touch targets
 
 Interactive editor handles should target at least roughly 48 logical pixels of touch area on mobile, even when the visible affordance is much smaller.
 
 Never optimize a handle for visual minimalism at the expense of reliable touch input.
+
+## Player controls
+
+The player should support both ordinary viewing and precise editing.
+
+Baseline:
+- tap video to show/hide controls,
+- play/pause,
+- current time / duration,
+- scrub through the timeline,
+- jump to trim start/end,
+- frame-step backward/forward when paused,
+- seek should update preview with low perceived latency.
+
+For editing, frame stepping and timeline zoom are more important than adding many transport buttons.
+
+Do not permanently cover the video with a large central play button while the user is editing.
 
 ## Tool model
 
