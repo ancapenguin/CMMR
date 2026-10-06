@@ -27,3 +27,4 @@ See:
 - [docs/REFERENCES.md](docs/REFERENCES.md) — open-source projects to study before reinventing hard media problems
 - [docs/VISION.md](docs/VISION.md) — broader product principles and scope control
 - [docs/STORAGE.md](docs/STORAGE.md) — user-owned files, cache, project folders and cleanup rules
+- [docs/PROJECTS.md](docs/PROJECTS.md) — non-destructive project persistence, relinking and portable projects
