@@ -22,4 +22,6 @@ See:
 - [docs/STACK.md](docs/STACK.md) — stack policy
 - [docs/MEDIA.md](docs/MEDIA.md) — media editor direction and processing modes
 - [docs/UX.md](docs/UX.md) — editor interaction rules
-- [docs/TESTING.md](docs/TESTING.md) — real-device media test matrix
+- [docs/TESTING.md](docs/TESTING.md) — layered automated + real-device testing
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — replaceable editor/media-engine boundaries
+- [docs/REFERENCES.md](docs/REFERENCES.md) — open-source projects to study before reinventing hard media problems
