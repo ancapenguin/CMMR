@@ -102,9 +102,15 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
     String path,
     Duration duration,
   ) async {
+    final seconds =
+        duration.inMilliseconds / Duration.millisecondsPerSecond;
+    final thumbnailCount =
+        (seconds * 1.5).round().clamp(12, 80).toInt();
+
     final thumbnails = await _thumbnailService.generate(
       inputPath: path,
       duration: duration,
+      count: thumbnailCount,
     );
 
     if (!mounted || _inputPath != path) return;
