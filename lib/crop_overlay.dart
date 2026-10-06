@@ -35,7 +35,7 @@ class CropOverlay extends StatefulWidget {
 
 class _CropOverlayState extends State<CropOverlay> {
   static const _minimumSize = 0.08;
-  static const hitSize = 56.0;
+  static const _handleHitSize = 56.0;
 
   Rect _dragStartRect = Rect.zero;
   Offset _dragDelta = Offset.zero;
@@ -45,7 +45,7 @@ class _CropOverlayState extends State<CropOverlay> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
-        final hitSize = hitSize / widget.workspaceScale;
+        final hitSize = _handleHitSize / widget.workspaceScale;
         final pixelRect = Rect.fromLTRB(
           widget.rect.left * size.width,
           widget.rect.top * size.height,
@@ -72,10 +72,12 @@ class _CropOverlayState extends State<CropOverlay> {
                 key: const ValueKey('crop-move-area'),
                 behavior: HitTestBehavior.opaque,
                 onPanStart: (_) {
+                  if (!widget.enabled) return;
                   _dragStartRect = widget.rect;
                   _dragDelta = Offset.zero;
                 },
                 onPanUpdate: (details) {
+                  if (!widget.enabled) return;
                   _dragDelta += details.delta;
                   widget.onChanged(
                     _moveFrom(_dragStartRect, _dragDelta, size),
