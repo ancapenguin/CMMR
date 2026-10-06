@@ -1,6 +1,6 @@
 # CMMR
 
-**Codex Mobile Monorepo** — a workshop for building mobile apps and experiments for fun.
+**Codex Mobile Monorepo** — a local-first personal computing workshop. Media editing is the first serious vertical, not the final scope.
 
 CMMR is not one product. The goal is to make it cheap to go from an idea to an installable app without forcing every experiment into the same architecture.
 
@@ -25,3 +25,5 @@ See:
 - [docs/TESTING.md](docs/TESTING.md) — layered automated + real-device testing
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — replaceable editor/media-engine boundaries
 - [docs/REFERENCES.md](docs/REFERENCES.md) — open-source projects to study before reinventing hard media problems
+- [docs/VISION.md](docs/VISION.md) — broader product principles and scope control
+- [docs/STORAGE.md](docs/STORAGE.md) — user-owned files, cache, project folders and cleanup rules
