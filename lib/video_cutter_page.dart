@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show FontFeature;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -162,6 +163,23 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
       await controller.pause();
     }
     await controller.seekTo(_durationFromSeconds(seconds));
+  }
+
+  Future<void> _stepBy(Duration delta) async {
+    final controller = _controller;
+    if (controller == null) return;
+
+    if (controller.value.isPlaying) {
+      await controller.pause();
+    }
+
+    final current = controller.value.position.inMicroseconds;
+    final target = (current + delta.inMicroseconds).clamp(
+      _durationFromSeconds(_trim.start).inMicroseconds,
+      _durationFromSeconds(_trim.end).inMicroseconds,
+    );
+
+    await controller.seekTo(Duration(microseconds: target));
   }
 
   void _selectTool(_EditorTool tool) {
@@ -363,6 +381,10 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
               message: _message,
               thumbnailPaths: _timelineThumbnails,
               onTogglePlayback: _togglePlayback,
+              onStepBackward: () =>
+                  _stepBy(const Duration(milliseconds: -100)),
+              onStepForward: () =>
+                  _stepBy(const Duration(milliseconds: 100)),
               onTrimChanged: _setTrim,
               onSeek: _seek,
               onToolChanged: _selectTool,
@@ -450,6 +472,8 @@ class _Editor extends StatelessWidget {
     required this.message,
     required this.thumbnailPaths,
     required this.onTogglePlayback,
+    required this.onStepBackward,
+    required this.onStepForward,
     required this.onTrimChanged,
     required this.onSeek,
     required this.onToolChanged,
@@ -474,6 +498,8 @@ class _Editor extends StatelessWidget {
   final String? message;
   final List<String> thumbnailPaths;
   final VoidCallback onTogglePlayback;
+  final VoidCallback onStepBackward;
+  final VoidCallback onStepForward;
   final ValueChanged<RangeValues> onTrimChanged;
   final ValueChanged<double> onSeek;
   final ValueChanged<_EditorTool> onToolChanged;
@@ -549,27 +575,29 @@ class _Editor extends StatelessWidget {
                                 point: cropPrecisionPoint!,
                                 canvasSize: canvasSize,
                               ),
-                            Positioned(
-                              left: 10,
-                              bottom: 10,
-                              child: ValueListenableBuilder<VideoPlayerValue>(
-                                valueListenable: controller,
-                                builder: (context, value, _) {
-                                  return IconButton.filledTonal(
-                                    tooltip: value.isPlaying
-                                        ? 'Duraklat'
-                                        : 'Oynat',
-                                    onPressed:
-                                        exporting ? null : onTogglePlayback,
-                                    icon: Icon(
-                                      value.isPlaying
-                                          ? Icons.pause_rounded
-                                          : Icons.play_arrow_rounded,
-                                    ),
-                                  );
-                                },
+                            if (activeTool == _EditorTool.crop)
+                              Positioned(
+                                left: 10,
+                                bottom: 10,
+                                child:
+                                    ValueListenableBuilder<VideoPlayerValue>(
+                                  valueListenable: controller,
+                                  builder: (context, value, _) {
+                                    return IconButton.filledTonal(
+                                      tooltip: value.isPlaying
+                                          ? 'Duraklat'
+                                          : 'Oynat',
+                                      onPressed:
+                                          exporting ? null : onTogglePlayback,
+                                      icon: Icon(
+                                        value.isPlaying
+                                            ? Icons.pause_rounded
+                                            : Icons.play_arrow_rounded,
+                                      ),
+                                    );
+                                  },
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       );
@@ -600,7 +628,18 @@ class _Editor extends StatelessWidget {
                 ),
               if (activeTool == _EditorTool.trim)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
+                  child: _TransportBar(
+                    controller: controller,
+                    disabled: exporting,
+                    onTogglePlayback: onTogglePlayback,
+                    onStepBackward: onStepBackward,
+                    onStepForward: onStepForward,
+                  ),
+                ),
+              if (activeTool == _EditorTool.trim)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
                   child: ValueListenableBuilder<VideoPlayerValue>(
                     valueListenable: controller,
                     builder: (context, value, _) {
@@ -683,6 +722,88 @@ class _Editor extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TransportBar extends StatelessWidget {
+  const _TransportBar({
+    required this.controller,
+    required this.disabled,
+    required this.onTogglePlayback,
+    required this.onStepBackward,
+    required this.onStepForward,
+  });
+
+  final VideoPlayerController controller;
+  final bool disabled;
+  final VoidCallback onTogglePlayback;
+  final VoidCallback onStepBackward;
+  final VoidCallback onStepForward;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<VideoPlayerValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final current = value.position;
+        final duration = value.duration;
+
+        return SizedBox(
+          height: 42,
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: '0.1 sn geri',
+                visualDensity: VisualDensity.compact,
+                onPressed: disabled ? null : onStepBackward,
+                icon: const Icon(Icons.replay_10_rounded, size: 20),
+              ),
+              IconButton.filledTonal(
+                tooltip: value.isPlaying ? 'Duraklat' : 'Oynat',
+                visualDensity: VisualDensity.compact,
+                onPressed: disabled ? null : onTogglePlayback,
+                icon: Icon(
+                  value.isPlaying
+                      ? Icons.pause_rounded
+                      : Icons.play_arrow_rounded,
+                ),
+              ),
+              IconButton(
+                tooltip: '0.1 sn ileri',
+                visualDensity: VisualDensity.compact,
+                onPressed: disabled ? null : onStepForward,
+                icon: const Icon(Icons.forward_10_rounded, size: 20),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${_formatTransportTime(current)} / '
+                  '${_formatTransportTime(duration)}',
+                  textAlign: TextAlign.end,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontFeatures: const [
+                          FontFeature.tabularFigures(),
+                        ],
+                        color: Colors.white70,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+String _formatTransportTime(Duration value) {
+  final totalMilliseconds = math.max(0, value.inMilliseconds);
+  final minutes = totalMilliseconds ~/ 60000;
+  final seconds = (totalMilliseconds ~/ 1000) % 60;
+  final hundredths = (totalMilliseconds % 1000) ~/ 10;
+
+  return '${minutes.toString().padLeft(2, '0')}:'
+      '${seconds.toString().padLeft(2, '0')}.'
+      '${hundredths.toString().padLeft(2, '0')}';
 }
 
 class _CropPrecisionLoupe extends StatelessWidget {
