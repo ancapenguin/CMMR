@@ -11,6 +11,8 @@ class CropOverlay extends StatefulWidget {
     this.lockedNormalizedAspectRatio,
     this.onPrecisionPointChanged,
     this.onPrecisionEnd,
+    this.workspaceScale = 1,
+    this.enabled = true,
     super.key,
   });
 
@@ -24,6 +26,8 @@ class CropOverlay extends StatefulWidget {
   /// Normalized source point currently manipulated by a crop handle.
   final ValueChanged<Offset>? onPrecisionPointChanged;
   final VoidCallback? onPrecisionEnd;
+  final double workspaceScale;
+  final bool enabled;
 
   @override
   State<CropOverlay> createState() => _CropOverlayState();
@@ -31,7 +35,7 @@ class CropOverlay extends StatefulWidget {
 
 class _CropOverlayState extends State<CropOverlay> {
   static const _minimumSize = 0.08;
-  static const _handleHitSize = 56.0;
+  static const hitSize = 56.0;
 
   Rect _dragStartRect = Rect.zero;
   Offset _dragDelta = Offset.zero;
@@ -41,6 +45,7 @@ class _CropOverlayState extends State<CropOverlay> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
+        final hitSize = hitSize / widget.workspaceScale;
         final pixelRect = Rect.fromLTRB(
           widget.rect.left * size.width,
           widget.rect.top * size.height,
@@ -54,7 +59,10 @@ class _CropOverlayState extends State<CropOverlay> {
             Positioned.fill(
               child: IgnorePointer(
                 child: CustomPaint(
-                  painter: _CropPainter(widget.rect),
+                  painter: _CropPainter(
+                    widget.rect,
+                    widget.workspaceScale,
+                  ),
                 ),
               ),
             ),
@@ -76,39 +84,46 @@ class _CropOverlayState extends State<CropOverlay> {
                 child: const SizedBox.expand(),
               ),
             ),
-            _handle(_CropCorner.topLeft, pixelRect.topLeft, size),
-            _handle(_CropCorner.topRight, pixelRect.topRight, size),
-            _handle(_CropCorner.bottomLeft, pixelRect.bottomLeft, size),
-            _handle(_CropCorner.bottomRight, pixelRect.bottomRight, size),
+            _handle(_CropCorner.topLeft, pixelRect.topLeft, size, hitSize),
+            _handle(_CropCorner.topRight, pixelRect.topRight, size, hitSize),
+            _handle(_CropCorner.bottomLeft, pixelRect.bottomLeft, size, hitSize),
+            _handle(_CropCorner.bottomRight, pixelRect.bottomRight, size, hitSize),
           ],
         );
       },
     );
   }
 
-  Widget _handle(_CropCorner corner, Offset center, Size size) {
+  Widget _handle(
+    _CropCorner corner,
+    Offset center,
+    Size size,
+    double hitSize,
+  ) {
     final isLeft =
         corner == _CropCorner.topLeft || corner == _CropCorner.bottomLeft;
     final isTop =
         corner == _CropCorner.topLeft || corner == _CropCorner.topRight;
 
-    final left = isLeft ? center.dx : center.dx - _handleHitSize;
-    final top = isTop ? center.dy : center.dy - _handleHitSize;
+    final left = isLeft ? center.dx : center.dx - hitSize;
+    final top = isTop ? center.dy : center.dy - hitSize;
 
     return Positioned(
-      left: left.clamp(0.0, math.max(0.0, size.width - _handleHitSize)),
-      top: top.clamp(0.0, math.max(0.0, size.height - _handleHitSize)),
-      width: _handleHitSize,
-      height: _handleHitSize,
+      left: left.clamp(0.0, math.max(0.0, size.width - hitSize)),
+      top: top.clamp(0.0, math.max(0.0, size.height - hitSize)),
+      width: hitSize,
+      height: hitSize,
       child: GestureDetector(
         key: ValueKey('crop-handle-${corner.name}'),
         behavior: HitTestBehavior.opaque,
         onPanStart: (_) {
+          if (!widget.enabled) return;
           _dragStartRect = widget.rect;
           _dragDelta = Offset.zero;
           widget.onPrecisionPointChanged?.call(_cornerPoint(widget.rect, corner));
         },
         onPanUpdate: (details) {
+          if (!widget.enabled) return;
           _dragDelta += details.delta;
           final next = _resizeFrom(
             _dragStartRect,
@@ -120,8 +135,12 @@ class _CropOverlayState extends State<CropOverlay> {
           widget.onChanged(next);
           widget.onPrecisionPointChanged?.call(_cornerPoint(next, corner));
         },
-        onPanEnd: (_) => widget.onPrecisionEnd?.call(),
-        onPanCancel: () => widget.onPrecisionEnd?.call(),
+        onPanEnd: (_) {
+          if (widget.enabled) widget.onPrecisionEnd?.call();
+        },
+        onPanCancel: () {
+          if (widget.enabled) widget.onPrecisionEnd?.call();
+        },
         child: Align(
           alignment: switch (corner) {
             _CropCorner.topLeft => Alignment.topLeft,
@@ -129,7 +148,10 @@ class _CropOverlayState extends State<CropOverlay> {
             _CropCorner.bottomLeft => Alignment.bottomLeft,
             _CropCorner.bottomRight => Alignment.bottomRight,
           },
-          child: _CornerMark(corner: corner),
+          child: _CornerMark(
+            corner: corner,
+            displayScale: widget.workspaceScale,
+          ),
         ),
       ),
     );
@@ -260,14 +282,18 @@ class _CropOverlayState extends State<CropOverlay> {
 }
 
 class _CornerMark extends StatelessWidget {
-  const _CornerMark({required this.corner});
+  const _CornerMark({
+    required this.corner,
+    required this.displayScale,
+  });
 
   final _CropCorner corner;
+  final double displayScale;
 
   @override
   Widget build(BuildContext context) {
-    const length = 19.0;
-    const thickness = 4.0;
+    final length = 19.0 / displayScale;
+    final thickness = 4.0 / displayScale;
 
     return SizedBox(
       width: length,
@@ -309,9 +335,10 @@ class _CornerMark extends StatelessWidget {
 }
 
 class _CropPainter extends CustomPainter {
-  const _CropPainter(this.rect);
+  const _CropPainter(this.rect, this.displayScale);
 
   final Rect rect;
+  final double displayScale;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -340,12 +367,12 @@ class _CropPainter extends CustomPainter {
     final border = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
+      ..strokeWidth = 2 / displayScale;
     canvas.drawRect(crop, border);
 
     final grid = Paint()
       ..color = const Color(0x88FFFFFF)
-      ..strokeWidth = 1;
+      ..strokeWidth = 1 / displayScale;
 
     for (var i = 1; i <= 2; i++) {
       final x = crop.left + crop.width * i / 3;
@@ -357,6 +384,7 @@ class _CropPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _CropPainter oldDelegate) {
-    return oldDelegate.rect != rect;
+    return oldDelegate.rect != rect ||
+        oldDelegate.displayScale != displayScale;
   }
 }
