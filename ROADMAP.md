@@ -34,6 +34,8 @@ Exit condition: basic video selection, preview, trim, crop and export are reliab
 Turn the prototype into a dependable single-asset editor.
 
 - filmstrip timeline and accurate seeking,
+- pinch-to-zoom timeline with adaptive time ruler/thumbnail density,
+- sub-second precision and frame-step editing at high zoom,
 - reliable crop/rotate/flip,
 - aspect-ratio locks,
 - exact trim,
