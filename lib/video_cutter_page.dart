@@ -728,7 +728,7 @@ class _CropPanel extends StatelessWidget {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: presets.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 7),
+                separatorBuilder: (_, _) => const SizedBox(width: 7),
                 itemBuilder: (context, index) {
                   final preset = presets[index];
                   return ChoiceChip(
