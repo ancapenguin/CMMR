@@ -172,7 +172,9 @@ class CropOverlay extends StatelessWidget {
     final maxHeight = verticalSign < 0 ? anchor.dy : 1 - anchor.dy;
 
     final minWidth = math.max(_minimumSize, _minimumSize * ratio);
-    width = width.clamp(minWidth, math.min(maxWidth, maxHeight * ratio));
+    width = width
+        .clamp(minWidth, math.min(maxWidth, maxHeight * ratio))
+        .toDouble();
     height = width / ratio;
 
     final left = horizontalSign < 0 ? anchor.dx - width : anchor.dx;
