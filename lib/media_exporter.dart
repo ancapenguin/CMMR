@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:ffmpeg_kit_flutter_new_video/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_video/return_code.dart';
-import 'package:ffmpeg_kit_flutter_new_video/session.dart';
+import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
+import 'package:ffmpeg_kit_flutter_new_min/session.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -80,10 +80,7 @@ class MediaExporter {
         );
       } catch (_) {
         reencoded = true;
-        final output = File(outputPath);
-        if (await output.exists()) {
-          await output.delete();
-        }
+        await _deleteIfPresent(outputPath);
         onProgress?.call(0);
         await _run(
           _hardwareArguments(request, outputPath),
@@ -100,10 +97,7 @@ class MediaExporter {
         );
       } catch (_) {
         usedSoftwareFallback = true;
-        final output = File(outputPath);
-        if (await output.exists()) {
-          await output.delete();
-        }
+        await _deleteIfPresent(outputPath);
         onProgress?.call(0);
         await _run(
           _softwareArguments(request, outputPath),
@@ -249,6 +243,13 @@ class MediaExporter {
           ? 'FFmpeg failed with return code $returnCode.'
           : output,
     );
+  }
+
+  Future<void> _deleteIfPresent(String path) async {
+    final output = File(path);
+    if (await output.exists()) {
+      await output.delete();
+    }
   }
 
   String _seconds(Duration duration) {
