@@ -470,140 +470,169 @@ class _Editor extends StatelessWidget {
             ? null
             : cropAspectRatio! / sourceAspect;
 
+    final videoAspect =
+        controller.value.aspectRatio == 0 ? 16 / 9 : controller.value.aspectRatio;
+
     return SafeArea(
-      child: Column(
-        children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints:
-                      const BoxConstraints(maxWidth: 900, maxHeight: 620),
-                  child: AspectRatio(
-                    aspectRatio: controller.value.aspectRatio == 0
-                        ? 16 / 9
-                        : controller.value.aspectRatio,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          const ColoredBox(color: Colors.black),
-                          VideoPlayer(controller),
-                          if (activeTool == _EditorTool.crop)
-                            CropOverlay(
-                              rect: crop,
-                              lockedNormalizedAspectRatio:
-                                  lockedNormalizedAspectRatio,
-                              onChanged: onCropChanged,
-                            ),
-                          Positioned(
-                            left: 10,
-                            bottom: 10,
-                            child: ValueListenableBuilder<VideoPlayerValue>(
-                              valueListenable: controller,
-                              builder: (context, value, _) {
-                                return IconButton.filledTonal(
-                                  tooltip: value.isPlaying ? 'Duraklat' : 'Oynat',
-                                  onPressed:
-                                      exporting ? null : onTogglePlayback,
-                                  icon: Icon(
-                                    value.isPlaying
-                                        ? Icons.pause_rounded
-                                        : Icons.play_arrow_rounded,
-                                  ),
-                                );
-                              },
-                            ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final availableWidth = math.max(1.0, constraints.maxWidth - 20);
+          final trimCanvasHeight = math.min(
+            availableWidth / videoAspect,
+            constraints.maxHeight * 0.46,
+          );
+
+          Widget videoCanvas() {
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 900,
+                  maxHeight: 720,
+                ),
+                child: AspectRatio(
+                  aspectRatio: videoAspect,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        const ColoredBox(color: Colors.black),
+                        VideoPlayer(controller),
+                        if (activeTool == _EditorTool.crop)
+                          CropOverlay(
+                            rect: crop,
+                            lockedNormalizedAspectRatio:
+                                lockedNormalizedAspectRatio,
+                            onChanged: onCropChanged,
                           ),
-                        ],
-                      ),
+                        Positioned(
+                          left: 10,
+                          bottom: 10,
+                          child: ValueListenableBuilder<VideoPlayerValue>(
+                            valueListenable: controller,
+                            builder: (context, value, _) {
+                              return IconButton.filledTonal(
+                                tooltip:
+                                    value.isPlaying ? 'Duraklat' : 'Oynat',
+                                onPressed:
+                                    exporting ? null : onTogglePlayback,
+                                icon: Icon(
+                                  value.isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-            child: ValueListenableBuilder<VideoPlayerValue>(
-              valueListenable: controller,
-              builder: (context, value, _) {
-                return TrimTimeline(
-                  durationSeconds: durationSeconds,
-                  range: trim,
-                  positionSeconds:
-                      value.position.inMilliseconds / 1000.0,
-                  thumbnailPaths: thumbnailPaths,
-                  onRangeChanged: onTrimChanged,
-                  onSeek: onSeek,
-                );
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-            child: SegmentedButton<_EditorTool>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(
-                  value: _EditorTool.trim,
-                  icon: Icon(Icons.content_cut_rounded),
-                  label: Text('Kes'),
-                ),
-                ButtonSegment(
-                  value: _EditorTool.crop,
-                  icon: Icon(Icons.crop_rounded),
-                  label: Text('Kırp'),
-                ),
-              ],
-              selected: {activeTool},
-              onSelectionChanged: exporting
-                  ? null
-                  : (selection) => onToolChanged(selection.first),
-            ),
-          ),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 160),
-            child: activeTool == _EditorTool.trim
-                ? _TrimPanel(
-                    key: const ValueKey('trim'),
-                    fastTrim: fastTrim,
-                    cropEnabled: cropEnabled,
-                    onChanged: onFastTrimChanged,
-                  )
-                : _CropPanel(
-                    key: const ValueKey('crop'),
-                    enabled: cropEnabled,
-                    aspectRatio: cropAspectRatio,
-                    onPreset: onCropPreset,
-                    onReset: onResetCrop,
+            );
+          }
+
+          return Column(
+            children: [
+              if (activeTool == _EditorTool.crop)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+                    child: videoCanvas(),
                   ),
-          ),
-          if (exporting)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
-              child: LinearProgressIndicator(
-                value: progress > 0 ? progress : null,
-              ),
-            ),
-          if (message != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
-              child: Text(
-                message!,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: message!.startsWith('Dışa')
-                      ? Theme.of(context).colorScheme.error
-                      : Colors.white70,
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+                  child: SizedBox(
+                    height: trimCanvasHeight,
+                    width: double.infinity,
+                    child: videoCanvas(),
+                  ),
+                ),
+              if (activeTool == _EditorTool.trim)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  child: ValueListenableBuilder<VideoPlayerValue>(
+                    valueListenable: controller,
+                    builder: (context, value, _) {
+                      return TrimTimeline(
+                        durationSeconds: durationSeconds,
+                        range: trim,
+                        positionSeconds:
+                            value.position.inMilliseconds / 1000.0,
+                        thumbnailPaths: thumbnailPaths,
+                        onRangeChanged: onTrimChanged,
+                        onSeek: onSeek,
+                      );
+                    },
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: SegmentedButton<_EditorTool>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(
+                      value: _EditorTool.trim,
+                      icon: Icon(Icons.content_cut_rounded),
+                      label: Text('Kes'),
+                    ),
+                    ButtonSegment(
+                      value: _EditorTool.crop,
+                      icon: Icon(Icons.crop_rounded),
+                      label: Text('Kırp'),
+                    ),
+                  ],
+                  selected: {activeTool},
+                  onSelectionChanged: exporting
+                      ? null
+                      : (selection) => onToolChanged(selection.first),
                 ),
               ),
-            ),
-        ],
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 160),
+                child: activeTool == _EditorTool.trim
+                    ? _TrimPanel(
+                        key: const ValueKey('trim'),
+                        fastTrim: fastTrim,
+                        cropEnabled: cropEnabled,
+                        onChanged: onFastTrimChanged,
+                      )
+                    : _CropPanel(
+                        key: const ValueKey('crop'),
+                        enabled: cropEnabled,
+                        aspectRatio: cropAspectRatio,
+                        onPreset: onCropPreset,
+                        onReset: onResetCrop,
+                      ),
+              ),
+              if (exporting)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
+                  child: LinearProgressIndicator(
+                    value: progress > 0 ? progress : null,
+                  ),
+                ),
+              if (message != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+                  child: Text(
+                    message!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: message!.startsWith('Dışa')
+                          ? Theme.of(context).colorScheme.error
+                          : Colors.white70,
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
