@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:ffmpeg_kit_flutter_new_video/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_video/return_code.dart';
+import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
 import 'package:path_provider/path_provider.dart';
 
 class TimelineThumbnailService {
