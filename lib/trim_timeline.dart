@@ -172,6 +172,7 @@ class _TrimTimelineState extends State<TrimTimeline> {
                         ? const NeverScrollableScrollPhysics()
                         : const ClampingScrollPhysics(),
                     child: SizedBox(
+                      key: const ValueKey('trim-timeline-content'),
                       width: contentWidth,
                       height: 98,
                       child: _TimelineSurface(
