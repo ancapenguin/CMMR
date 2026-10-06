@@ -1,6 +1,6 @@
 # ROADMAP.md
 
-CMMR is intentionally idea-driven. This roadmap defines repository infrastructure order, not a product feature backlog.
+CMMR is intentionally idea-driven. This roadmap defines repository infrastructure order, not a giant product backlog.
 
 ## Phase 0 — Foundation
 
@@ -10,8 +10,8 @@ Status: in progress.
 - [x] Produce optimized ABI-split release APKs.
 - [x] Publish tagged/manual builds to GitHub Releases.
 - [x] Define repository and agent rules.
-- [x] Define default stack-selection policy.
-- [ ] Replace the bootstrap demo with the first actual app/experiment.
+- [x] Define the single-stack mobile policy.
+- [ ] Replace the bootstrap demo with the first actual app.
 
 ### Explicit non-goals for Phase 0
 - in-app updater,
@@ -20,25 +20,40 @@ Status: in progress.
 - generic backend,
 - shared "core" package,
 - design system,
-- state-management framework chosen before an app needs one.
+- state-management framework chosen before an app needs one,
+- a second mobile UI framework.
 
-## Phase 1 — First real app
+## Phase 1 — First real app: video cutter
 
-Pick an idea small enough to reach an installable useful state quickly.
+Build a small local-first video utility with both meanings of "crop/cut":
 
-The first app should answer:
-- Is Flutter sufficient for the idea?
-- Which Android/platform capabilities are actually required?
-- What app-level conventions are worth keeping?
-- Which parts of the current release workflow are annoying in real use?
+- temporal trim: choose start and end time,
+- spatial crop: choose the rectangle to keep,
+- preview the selected video,
+- export the result locally,
+- show processing progress and failure details.
 
-Do not restructure the whole repository merely to make the first app look "enterprise".
+Implementation direction:
+- Flutter/Dart UI,
+- Flutter's maintained `video_player` for preview,
+- native FFmpeg processing through a maintained Flutter integration,
+- use stream-copy for a fast trim-only path where acceptable,
+- crop/re-encode through FFmpeg; use Android hardware codecs when they are reliable,
+- no Rust initially.
+
+Rust is reconsidered only if profiling later identifies substantial processing that CMMR itself owns rather than work already performed inside FFmpeg.
+
+The first app should also answer:
+- which file/SAF workflow is least annoying on Android,
+- how large the native media dependency makes the APK,
+- whether hardware encoding is reliable across the phones we actually use,
+- what release/update friction appears in real usage.
 
 ## Phase 2 — Real monorepo
 
 Trigger: a second real app is ready to enter the repository.
 
-Then migrate from the root bootstrap layout to:
+Then migrate from the root app layout to:
 
 ```
 apps/
@@ -79,17 +94,10 @@ Only then choose/update:
 - download + install UX,
 - rollback/failure behavior.
 
-The updater should be an app/distribution solution, not repo infrastructure looking for a use case.
+The updater should solve actual distribution friction, not exist because updater infrastructure sounds useful.
 
 ## Phase 5 — Shared packages
 
 Trigger: duplicated production code exists in two or more apps.
 
-Extract only demonstrated shared code. Candidate packages may eventually include:
-- release/update metadata client,
-- small UI primitives,
-- persistence helpers,
-- platform capability wrappers,
-- a Rust-backed engine shared by multiple apps.
-
-No package is created merely because it sounds reusable.
+Extract only demonstrated shared code. No package is created merely because it sounds reusable.
