@@ -751,11 +751,9 @@ class _TransportBar extends StatelessWidget {
           height: 42,
           child: Row(
             children: [
-              IconButton(
-                tooltip: '0.1 sn geri',
-                visualDensity: VisualDensity.compact,
+              TextButton(
                 onPressed: disabled ? null : onStepBackward,
-                icon: const Icon(Icons.replay_10_rounded, size: 20),
+                child: const Text('−0.1'),
               ),
               IconButton.filledTonal(
                 tooltip: value.isPlaying ? 'Duraklat' : 'Oynat',
@@ -767,11 +765,9 @@ class _TransportBar extends StatelessWidget {
                       : Icons.play_arrow_rounded,
                 ),
               ),
-              IconButton(
-                tooltip: '0.1 sn ileri',
-                visualDensity: VisualDensity.compact,
+              TextButton(
                 onPressed: disabled ? null : onStepForward,
-                icon: const Icon(Icons.forward_10_rounded, size: 20),
+                child: const Text('+0.1'),
               ),
               const SizedBox(width: 6),
               Expanded(
