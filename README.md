@@ -29,3 +29,4 @@ See:
 - [docs/STORAGE.md](docs/STORAGE.md) — user-owned files, cache, project folders and cleanup rules
 - [docs/PROJECTS.md](docs/PROJECTS.md) — non-destructive project persistence, relinking and portable projects
 - [docs/LESSONS.md](docs/LESSONS.md) — concrete engineering lessons we should not relearn
+- [docs/EDITOR_BENCHMARK.md](docs/EDITOR_BENCHMARK.md) — seven-state benchmark for the mobile editor UX
