@@ -168,7 +168,7 @@ class _TrimTimelineState extends State<TrimTimeline> {
                     key: const ValueKey('trim-timeline-scroll'),
                     controller: _scrollController,
                     scrollDirection: Axis.horizontal,
-                    physics: _pinching
+                    physics: _pinching || _zoom <= 1.02
                         ? const NeverScrollableScrollPhysics()
                         : const ClampingScrollPhysics(),
                     child: SizedBox(
@@ -469,7 +469,13 @@ class _TrimHandleState extends State<_TrimHandle> {
         behavior: HitTestBehavior.opaque,
         onHorizontalDragStart: _startDrag,
         onHorizontalDragUpdate: _updateDrag,
-        child: Center(
+        child: Align(
+          alignment: widget.centerX <= _TrimTimelineState._handleHitWidth / 2
+              ? Alignment.centerLeft
+              : widget.centerX >=
+                      widget.width - _TrimTimelineState._handleHitWidth / 2
+                  ? Alignment.centerRight
+                  : Alignment.center,
           child: Container(
             width: 10,
             height: _TrimTimelineState._trackHeight + 2,
