@@ -63,15 +63,30 @@ class CropOverlay extends StatelessWidget {
   }
 
   Widget _handle(_CropCorner corner, Offset center, Size size) {
+    final isLeft =
+        corner == _CropCorner.topLeft || corner == _CropCorner.bottomLeft;
+    final isTop =
+        corner == _CropCorner.topLeft || corner == _CropCorner.topRight;
+
+    final left = isLeft ? center.dx : center.dx - _handleHitSize;
+    final top = isTop ? center.dy : center.dy - _handleHitSize;
+
     return Positioned(
-      left: center.dx - _handleHitSize / 2,
-      top: center.dy - _handleHitSize / 2,
+      left: left.clamp(0.0, math.max(0.0, size.width - _handleHitSize)),
+      top: top.clamp(0.0, math.max(0.0, size.height - _handleHitSize)),
       width: _handleHitSize,
       height: _handleHitSize,
       child: GestureDetector(
+        key: ValueKey('crop-handle-${corner.name}'),
         behavior: HitTestBehavior.opaque,
         onPanUpdate: (details) => _resize(corner, details.delta, size),
-        child: Center(
+        child: Align(
+          alignment: switch (corner) {
+            _CropCorner.topLeft => Alignment.topLeft,
+            _CropCorner.topRight => Alignment.topRight,
+            _CropCorner.bottomLeft => Alignment.bottomLeft,
+            _CropCorner.bottomRight => Alignment.bottomRight,
+          },
           child: _CornerMark(corner: corner),
         ),
       ),
