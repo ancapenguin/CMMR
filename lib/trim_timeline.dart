@@ -185,8 +185,14 @@ class _TrimHandle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final left = isStart
+        ? centerX - TrimTimeline._handleVisualWidth / 2
+        : centerX -
+            TrimTimeline._handleHitWidth +
+            TrimTimeline._handleVisualWidth / 2;
+
     return Positioned(
-      left: centerX - TrimTimeline._handleHitWidth / 2,
+      left: left,
       top: -8,
       bottom: -8,
       width: TrimTimeline._handleHitWidth,
@@ -197,14 +203,6 @@ class _TrimHandle extends StatelessWidget {
           alignment: isStart ? Alignment.centerLeft : Alignment.centerRight,
           child: Container(
             width: TrimTimeline._handleVisualWidth,
-            margin: EdgeInsets.only(
-              left: isStart ? (TrimTimeline._handleHitWidth -
-                      TrimTimeline._handleVisualWidth) /
-                  2 : 0,
-              right: !isStart ? (TrimTimeline._handleHitWidth -
-                      TrimTimeline._handleVisualWidth) /
-                  2 : 0,
-            ),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.horizontal(
