@@ -115,3 +115,51 @@ The UI should explain whether deleting a category is:
 Local AI models, codec packs, effects/assets, templates and other large optional resources should be separately visible and removable.
 
 Do not disguise gigabytes of downloadable models as unexplained "App data".
+
+
+## Storage dashboard UX
+
+Show storage as a **segmented storage-usage bar** (a stacked horizontal bar) with a total above it.
+
+Example:
+
+```
+9.5 GB used by CMMR-managed data
+
+[ App 42 MB ][ Cache 620 MB ][ Projects 18 MB ][ Models 2.4 GB ][ Downloads 5.7 GB ][ Previews 720 MB ]
+```
+
+Each segment must be drillable. A user should be able to tap a category and see exactly what consumes space.
+
+For every category, provide where applicable:
+- total size,
+- largest items first,
+- owning project/provider,
+- file/folder location when user-visible,
+- last used date,
+- whether it is rebuildable,
+- Open / Locate,
+- Delete,
+- Delete all,
+- Move,
+- change default location.
+
+Never show only an opaque aggregate such as "App data: 8.1 GB" if CMMR itself can explain that storage.
+
+Suggested categories:
+- application/runtime,
+- settings/databases,
+- project metadata,
+- cache,
+- thumbnails,
+- waveforms,
+- preview/proxy media,
+- temporary render files,
+- local AI models,
+- downloaded media,
+- downloaded assets/effects,
+- user exports.
+
+Downloaded media and exports are user-owned files. The dashboard may index/manage them, but must make clear that deleting them deletes the user's actual files.
+
+Cache/proxy/model cleanup should also be available per project, not only globally.
