@@ -1,67 +1,75 @@
 # Stack Policy
 
-This is a decision guide, not a ban list.
+CMMR intentionally keeps the mobile stack boring so an app can be created and iterated remotely with Codex/ChatGPT.
 
-## Default
+## Mobile default
 
-**Flutter + Dart** is the default starting point for a CMMR mobile app.
+**Flutter + Dart is the CMMR mobile application stack.**
+
+This is stronger than a casual default: normal CMMR apps should not introduce another UI framework.
 
 Why:
-- one codebase reaches Android quickly,
-- the repository already has a working Flutter Android CI/release path,
-- UI iteration is fast,
-- Dart is sufficient for most app/business logic,
-- native code can still be added when necessary.
+- one predictable project shape for agents,
+- Android APKs already build in CI,
+- fast UI iteration,
+- Dart is sufficient for ordinary product logic,
+- platform capabilities can stay behind plugins,
+- less toolchain and architecture churn between experiments.
 
-Do not interpret "default" as "every app must use Flutter".
+## Platform-specific functionality
 
-## When to choose something else
+Use this order:
 
-| Need | Preferred choice | Reason |
-| --- | --- | --- |
-| Normal cross-platform/mobile UI app | Flutter + Dart | Lowest setup/maintenance cost for CMMR |
-| Android-only app with deep OS integration | Kotlin + Jetpack Compose | Direct access to Android APIs and lifecycle |
-| Home-screen widgets, services, accessibility, unusual Android platform behavior | Kotlin/Compose, or a small native Kotlin layer under Flutter | Avoid fighting framework/plugin boundaries |
-| CPU-heavy parser/engine/codec | Rust core + thin app bindings | Native performance and reusable safe core |
-| Crypto/protocol-sensitive reusable core | Rust | Strong fit for constrained, testable core logic |
-| Small web dashboard/API glue | TypeScript | Fast ecosystem and iteration |
-| Tiny standalone service with a strong reason for a single binary | Go can be considered | Operational simplicity; not a default dependency |
-| Pure experiment whose purpose is evaluating another framework | Whatever the experiment requires | Experiments are allowed; isolate the choice to that app |
+1. existing maintained Flutter package,
+2. a small package/plugin CMMR owns,
+3. a narrow platform channel/native implementation only when required.
+
+Native implementation code may exist behind the Flutter boundary. Native UI should not be introduced merely because the feature is Android-specific.
 
 ## Rust rule
 
-Rust is opt-in, not ceremonial.
+Rust is opt-in and must own useful work.
 
 Good reasons:
-- measurable hot path,
-- protocol/parser/engine that benefits from strict types and native execution,
-- shared core across several frontends,
-- security-sensitive native component.
+- a measured CPU-heavy algorithm implemented by us,
+- protocol/parser/engine code with meaningful reuse,
+- a security-sensitive native component,
+- a core that is genuinely shared by multiple frontends.
 
 Bad reasons:
-- a settings screen,
-- ordinary CRUD,
-- simple state management,
-- "the project might need performance later".
+- ordinary app/business logic,
+- CRUD/state/navigation,
+- wrapping an already-native engine such as FFmpeg just to say the app uses Rust,
+- hypothetical future performance.
 
-## State management
+For media work, remember that FFmpeg codecs and filters are already native. Calling them through Rust instead of Dart does not inherently make the actual media processing faster.
 
-Do not select a repository-wide Flutter state-management library now.
+## Services / other code
 
-Start with Flutter primitives for small apps. Introduce an external state-management package when the first real app demonstrates enough complexity to justify it. The choice may remain app-specific.
+| Need | Preferred choice |
+| --- | --- |
+| Mobile UI and normal app logic | Flutter + Dart |
+| Android capability with good package support | Flutter package |
+| Android capability without package support | narrow native plugin/platform channel |
+| Owned CPU-heavy/parser/protocol engine | Rust when justified |
+| Small web/API glue | TypeScript |
+| Tiny standalone service with a strong operational reason | Go may be considered |
+| Framework-evaluation experiment | isolate whatever the experiment needs |
 
-## Navigation
+## State management and navigation
 
-Same rule: do not install a routing framework before an app needs non-trivial navigation/deep links.
+Do not select repository-wide state-management or routing packages in advance.
+
+Use Flutter primitives while an app is small. Add a package only when a real app creates enough complexity to justify it.
 
 ## Monorepo tooling
 
 Dart Pub workspaces are the base mechanism once multiple Dart/Flutter packages exist.
 
-Melos is optional orchestration on top. As of October 2026, the current pub.dev release is Melos 8.9.0, and it is designed to work with Pub workspaces. Add it when commands across multiple packages, filtering, or versioning become useful—not before.
+Melos is optional orchestration on top. Add it only when cross-package commands, filtering, or versioning remove real repetition.
 
 ## Toolchain versioning
 
 Keep CI toolchain versions explicit. Upgrade Flutter/Dart deliberately and separately from product changes.
 
-At the time this document was introduced, CMMR CI pins Flutter 3.47.5 and the root package requires Dart ^3.13.4. Those values describe the current repository state; they are not permanent architecture decisions.
+At the time this document was introduced, CMMR CI pins Flutter 3.47.5 and the root package requires Dart ^3.13.4. Those values describe repository state, not permanent architecture decisions.
