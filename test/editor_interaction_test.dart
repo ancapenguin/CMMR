@@ -126,6 +126,48 @@ void main() {
     expect(changed!.width / changed!.height, closeTo(1, 0.001));
   });
 
+  testWidgets('crop handle accumulates the full drag and reports precision point',
+      (tester) async {
+    Rect? changed;
+    Offset? precisionPoint;
+    var precisionEnded = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 300,
+              height: 300,
+              child: CropOverlay(
+                rect: const Rect.fromLTWH(0.25, 0.25, 0.5, 0.5),
+                onChanged: (value) => changed = value,
+                onPrecisionPointChanged: (value) => precisionPoint = value,
+                onPrecisionEnd: () => precisionEnded = true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final handle =
+        find.byKey(const ValueKey('crop-handle-bottomRight'));
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+
+    await gesture.moveBy(const Offset(20, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(20, 0));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+
+    expect(changed, isNotNull);
+    expect(changed!.width, closeTo(0.5 + 40 / 300, 0.002));
+    expect(precisionPoint, isNotNull);
+    expect(precisionEnded, isTrue);
+  });
+
   testWidgets('full-frame crop handle stays inside the video canvas',
       (tester) async {
     await tester.pumpWidget(
