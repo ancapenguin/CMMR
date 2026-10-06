@@ -29,7 +29,6 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
   RangeValues _trim = const RangeValues(0, 1);
   Rect _crop = const Rect.fromLTWH(0, 0, 1, 1);
   double? _cropAspectRatio;
-  Offset? _cropPrecisionPoint;
   List<String> _timelineThumbnails = const [];
   _EditorTool _activeTool = _EditorTool.trim;
   bool _cropEnabled = false;
@@ -89,7 +88,6 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
       _trim = RangeValues(0, durationSeconds);
       _crop = const Rect.fromLTWH(0, 0, 1, 1);
       _cropAspectRatio = null;
-      _cropPrecisionPoint = null;
       _cropEnabled = false;
       _fastTrim = false;
       _activeTool = _EditorTool.trim;
@@ -198,12 +196,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
   }
 
   void _selectTool(_EditorTool tool) {
-    setState(() {
-      _activeTool = tool;
-      if (tool != _EditorTool.crop) {
-        _cropPrecisionPoint = null;
-      }
-    });
+    setState(() => _activeTool = tool);
   }
 
   void _setCropPreset(double? targetAspectRatio) {
@@ -248,7 +241,6 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
     setState(() {
       _cropEnabled = false;
       _cropAspectRatio = null;
-      _cropPrecisionPoint = null;
       _crop = const Rect.fromLTWH(0, 0, 1, 1);
     });
   }
@@ -388,7 +380,6 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
               crop: _crop,
               cropEnabled: _cropEnabled,
               cropAspectRatio: _cropAspectRatio,
-              cropPrecisionPoint: _cropPrecisionPoint,
               activeTool: _activeTool,
               fastTrim: _fastTrim,
               exporting: _exporting,
@@ -410,12 +401,6 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
                 });
               },
               onCropPreset: _setCropPreset,
-              onCropPrecisionPointChanged: (value) {
-                setState(() => _cropPrecisionPoint = value);
-              },
-              onCropPrecisionEnd: () {
-                setState(() => _cropPrecisionPoint = null);
-              },
               onResetCrop: _resetCrop,
               onFastTrimChanged: (value) {
                 setState(() => _fastTrim = value);
@@ -479,7 +464,6 @@ class _Editor extends StatelessWidget {
     required this.crop,
     required this.cropEnabled,
     required this.cropAspectRatio,
-    required this.cropPrecisionPoint,
     required this.activeTool,
     required this.fastTrim,
     required this.exporting,
@@ -494,8 +478,6 @@ class _Editor extends StatelessWidget {
     required this.onToolChanged,
     required this.onCropChanged,
     required this.onCropPreset,
-    required this.onCropPrecisionPointChanged,
-    required this.onCropPrecisionEnd,
     required this.onResetCrop,
     required this.onFastTrimChanged,
   });
@@ -505,7 +487,6 @@ class _Editor extends StatelessWidget {
   final Rect crop;
   final bool cropEnabled;
   final double? cropAspectRatio;
-  final Offset? cropPrecisionPoint;
   final _EditorTool activeTool;
   final bool fastTrim;
   final bool exporting;
@@ -520,8 +501,6 @@ class _Editor extends StatelessWidget {
   final ValueChanged<_EditorTool> onToolChanged;
   final ValueChanged<Rect> onCropChanged;
   final ValueChanged<double?> onCropPreset;
-  final ValueChanged<Offset> onCropPrecisionPointChanged;
-  final VoidCallback onCropPrecisionEnd;
   final VoidCallback onResetCrop;
   final ValueChanged<bool> onFastTrimChanged;
 
@@ -559,13 +538,11 @@ class _Editor extends StatelessWidget {
                 ),
                 child: AspectRatio(
                   aspectRatio: videoAspect,
-                  child: LayoutBuilder(
-                    builder: (context, canvasConstraints) {
-                      return ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
                             const ColoredBox(color: Colors.black),
                             if (activeTool == _EditorTool.crop)
                               VideoPlayer(controller)
@@ -582,9 +559,6 @@ class _Editor extends StatelessWidget {
                                 lockedNormalizedAspectRatio:
                                     lockedNormalizedAspectRatio,
                                 onChanged: onCropChanged,
-                                onPrecisionPointChanged:
-                                    onCropPrecisionPointChanged,
-                                onPrecisionEnd: onCropPrecisionEnd,
                               ),
                             if (activeTool == _EditorTool.crop)
                               Positioned(
@@ -609,10 +583,8 @@ class _Editor extends StatelessWidget {
                                   },
                                 ),
                               ),
-                          ],
-                        ),
-                      );
-                    },
+                      ],
+                    ),
                   ),
                 ),
               ),
