@@ -118,13 +118,11 @@ class TrimTimeline extends StatelessWidget {
                 centerX: startX,
                 width: width,
                 isStart: true,
-                onDrag: (delta) {
-                  final next = (range.start + delta / width * safeDuration)
-                      .clamp(
-                        0.0,
-                        range.end - _minimumSelectionSeconds,
-                      )
-                      .toDouble();
+                value: range.start,
+                minValue: 0,
+                maxValue: range.end - _minimumSelectionSeconds,
+                durationSeconds: safeDuration,
+                onChanged: (next) {
                   onRangeChanged(RangeValues(next, range.end));
                   onSeek(next);
                 },
@@ -133,13 +131,11 @@ class TrimTimeline extends StatelessWidget {
                 centerX: endX,
                 width: width,
                 isStart: false,
-                onDrag: (delta) {
-                  final next = (range.end + delta / width * safeDuration)
-                      .clamp(
-                        range.start + _minimumSelectionSeconds,
-                        safeDuration,
-                      )
-                      .toDouble();
+                value: range.end,
+                minValue: range.start + _minimumSelectionSeconds,
+                maxValue: safeDuration,
+                durationSeconds: safeDuration,
+                onChanged: (next) {
                   onRangeChanged(RangeValues(range.start, next));
                   onSeek(next);
                 },
@@ -233,23 +229,53 @@ class _Filmstrip extends StatelessWidget {
   }
 }
 
-class _TrimHandle extends StatelessWidget {
+class _TrimHandle extends StatefulWidget {
   const _TrimHandle({
     required this.centerX,
     required this.width,
     required this.isStart,
-    required this.onDrag,
+    required this.value,
+    required this.minValue,
+    required this.maxValue,
+    required this.durationSeconds,
+    required this.onChanged,
   });
 
   final double centerX;
   final double width;
   final bool isStart;
-  final ValueChanged<double> onDrag;
+  final double value;
+  final double minValue;
+  final double maxValue;
+  final double durationSeconds;
+  final ValueChanged<double> onChanged;
+
+  @override
+  State<_TrimHandle> createState() => _TrimHandleState();
+}
+
+class _TrimHandleState extends State<_TrimHandle> {
+  double _dragStartValue = 0;
+  double _dragDx = 0;
+
+  void _startDrag(DragStartDetails details) {
+    _dragStartValue = widget.value;
+    _dragDx = 0;
+  }
+
+  void _updateDrag(DragUpdateDetails details) {
+    _dragDx += details.delta.dx;
+    final next = (_dragStartValue +
+            (_dragDx / widget.width) * widget.durationSeconds)
+        .clamp(widget.minValue, widget.maxValue)
+        .toDouble();
+    widget.onChanged(next);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final left = (centerX - TrimTimeline._handleHitWidth / 2)
-        .clamp(0.0, width - TrimTimeline._handleHitWidth)
+    final left = (widget.centerX - TrimTimeline._handleHitWidth / 2)
+        .clamp(0.0, widget.width - TrimTimeline._handleHitWidth)
         .toDouble();
 
     return Positioned(
@@ -258,9 +284,12 @@ class _TrimHandle extends StatelessWidget {
       width: TrimTimeline._handleHitWidth,
       height: TrimTimeline._trackHeight + 10,
       child: GestureDetector(
-        key: ValueKey(isStart ? 'trim-start-handle' : 'trim-end-handle'),
+        key: ValueKey(
+          widget.isStart ? 'trim-start-handle' : 'trim-end-handle',
+        ),
         behavior: HitTestBehavior.opaque,
-        onHorizontalDragUpdate: (details) => onDrag(details.delta.dx),
+        onHorizontalDragStart: _startDrag,
+        onHorizontalDragUpdate: _updateDrag,
         child: Center(
           child: Container(
             width: 10,
@@ -268,8 +297,8 @@ class _TrimHandle extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.horizontal(
-                left: Radius.circular(isStart ? 7 : 3),
-                right: Radius.circular(isStart ? 3 : 7),
+                left: Radius.circular(widget.isStart ? 7 : 3),
+                right: Radius.circular(widget.isStart ? 3 : 7),
               ),
               boxShadow: const [
                 BoxShadow(
