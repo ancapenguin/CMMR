@@ -1,6 +1,6 @@
 # ROADMAP.md
 
-CMMR is a local-first mobile media workshop. The long-term target is not "a cutter with more buttons"; it is a lightweight, modular, open media editor that can grow toward serious editing without inheriting CapCut-style bloat, server dependence, telemetry, or unnecessary product complexity.
+CMMR is a local-first personal computing workshop. Media editing is the current focus and first serious vertical, not the final scope. The media target is not "a cutter with more buttons"; it is a lightweight, modular, open editor that can grow toward serious editing without inheriting CapCut-style bloat, server dependence, telemetry, or unnecessary product complexity.
 
 The roadmap is capability-gated. A phase starts because the previous layer is stable enough to support it, not because a feature list says it is time.
 
