@@ -1,103 +1,225 @@
 # ROADMAP.md
 
-CMMR is intentionally idea-driven. This roadmap defines repository infrastructure order, not a giant product backlog.
+CMMR is a local-first mobile media workshop. The long-term target is not "a cutter with more buttons"; it is a lightweight, modular, open media editor that can grow toward serious editing without inheriting CapCut-style bloat, server dependence, telemetry, or unnecessary product complexity.
+
+The roadmap is capability-gated. A phase starts because the previous layer is stable enough to support it, not because a feature list says it is time.
+
+## Product principles
+
+- One app for media work; do not split photo/video into separate products without a strong reason.
+- Flutter/Dart owns the app and editor UX.
+- Processing engines sit behind narrow interfaces and may change.
+- Media stays local by default.
+- Prefer hardware acceleration and zero-copy/remux paths when they preserve correctness.
+- Heavy capabilities should be modular and demand-driven.
+- Do not expose implementation complexity to ordinary users.
+- Never let an early technical choice become sacred. Replace an engine or boundary if profiling or product needs prove it wrong.
 
 ## Phase 0 — Foundation
 
 Status: in progress.
 
-- [x] Prove Flutter Android build in CI.
-- [x] Produce optimized ABI-split release APKs.
-- [x] Publish tagged/manual builds to GitHub Releases.
-- [x] Define repository and agent rules.
-- [x] Define the single-stack mobile policy.
-- [ ] Replace the bootstrap demo with the first actual app.
+- [x] Prove Android builds in CI.
+- [x] Produce ABI-split release APKs.
+- [x] Define agent/stack/UX/media rules.
+- [x] Build the first real trim/crop vertical slice.
+- [ ] Stabilize the editor on a real Android phone.
+- [ ] Make CI fast enough that every code change can be checked without building an APK every time.
+- [ ] Establish automated unit/widget tests for editor-domain logic and interactions.
 
-### Explicit non-goals for Phase 0
-- in-app updater,
-- account/auth framework,
-- analytics,
-- generic backend,
-- shared "core" package,
-- design system,
-- state-management framework chosen before an app needs one,
-- a second mobile UI framework.
+Exit condition: basic video selection, preview, trim, crop and export are reliable on a real phone.
 
-## Phase 1 — First real app: video cutter
+## Phase 1 — Editing core
 
-Build a small local-first video utility with both meanings of "crop/cut":
+Turn the prototype into a dependable single-asset editor.
 
-- temporal trim: choose start and end time,
-- spatial crop: choose the rectangle to keep,
-- preview the selected video,
-- export the result locally,
-- show processing progress and failure details.
+- filmstrip timeline and accurate seeking,
+- reliable crop/rotate/flip,
+- aspect-ratio locks,
+- exact trim,
+- fast lossless trim,
+- Smart Cut,
+- undo/redo,
+- project state separated from widgets,
+- deterministic project serialization,
+- capability/error reporting instead of generic FFmpeg failures.
 
-Implementation direction:
-- Flutter/Dart UI,
-- Flutter's maintained `video_player` for preview,
-- native FFmpeg processing through a maintained Flutter integration,
-- use stream-copy for a fast trim-only path where acceptable,
-- crop/re-encode through FFmpeg; use Android hardware codecs when they are reliable,
-- no Rust initially.
+Smart Cut should follow the proven hybrid model:
+- encode only the boundary region needed for frame accuracy,
+- stream-copy the compatible remainder,
+- concatenate only when stream parameters allow it.
 
-Rust is reconsidered only if profiling later identifies substantial processing that CMMR itself owns rather than work already performed inside FFmpeg.
+Exit condition: one video can be edited repeatedly without destructive state bugs, sync errors, or unclear export behavior.
 
-The first app should also answer:
-- which file/SAF workflow is least annoying on Android,
-- how large the native media dependency makes the APK,
-- whether hardware encoding is reliable across the phones we actually use,
-- what release/update friction appears in real usage.
+## Phase 2 — Export engine and jobs
 
-## Phase 2 — Real monorepo
+Make export a first-class subsystem.
 
-Trigger: a second real app is ready to enter the repository.
+- background export,
+- persistent export queue,
+- Android notification progress,
+- cancellation,
+- retry/recovery,
+- storage checks,
+- hardware encoder capability detection,
+- output presets,
+- inspectable export diagnostics,
+- benchmark exact / fast / smart paths.
 
-Then migrate from the root app layout to:
+Export should be independent from the editor screen lifecycle.
 
-```
-apps/
-  app_one/
-  app_two/
-packages/
-tool/
-docs/
-```
+Exit condition: long exports survive leaving the editor and fail predictably.
 
-Use native Dart Pub workspaces for Dart/Flutter packages. Consider Melos for cross-workspace scripting/versioning only if it removes real repetition.
+## Phase 3 — Media compatibility layer
 
-Update CI in the same change so no app becomes unbuildable during the migration.
+Broaden format support deliberately.
 
-## Phase 3 — App template
+Inputs to validate:
+- MP4 / H.264 / AAC,
+- HEVC,
+- MKV,
+- WebM,
+- AV1,
+- Opus,
+- variable-frame-rate phone footage,
+- HDR samples.
 
-Trigger: at least two apps reveal repeated setup work.
+Outputs:
+- Auto,
+- H.264/AAC MP4 as the compatibility baseline,
+- HEVC when supported,
+- AV1 only when capability and performance justify it,
+- MKV/WebM where they provide real value.
 
-Create a lightweight app template/scaffolder covering only proven repetition, for example:
-- package/bundle naming,
-- lints,
-- test skeleton,
-- theme/bootstrap shell,
-- Android release build,
-- standard CI hooks.
+At this phase decide whether packaged FFmpeg variants are sufficient or a custom minimal FFmpeg build is justified.
 
-Do not template architecture decisions that differ between apps.
+Exit condition: supported formats are defined by a tested matrix, not assumptions.
 
-## Phase 4 — Update infrastructure
+## Phase 4 — Project/timeline model
 
-Trigger: at least one app is regularly installed outside an app store and manual upgrades are now a real recurring cost.
+Move from "one file with edits" to a real non-linear editing model.
 
-Only then choose/update:
-- signing strategy,
-- release manifest format,
-- stable vs experimental channels,
-- update checking,
-- download + install UX,
-- rollback/failure behavior.
+- clips as project objects,
+- multiple sequential clips,
+- multiple audio tracks,
+- split/delete/reorder,
+- clip-local trim/crop/speed/volume,
+- project-global settings,
+- non-destructive edits,
+- autosave/recovery,
+- undo/redo transaction model.
 
-The updater should solve actual distribution friction, not exist because updater infrastructure sounds useful.
+The project model must not depend on FFmpeg command strings, Media3 classes, or Flutter widgets.
 
-## Phase 5 — Shared packages
+Exit condition: the same project can be previewed and exported through replaceable engine adapters.
 
-Trigger: duplicated production code exists in two or more apps.
+## Phase 5 — Photo editor
 
-Extract only demonstrated shared code. No package is created merely because it sounds reusable.
+Reuse the media/editor shell for still images.
+
+Start with:
+- crop,
+- rotate/flip,
+- perspective where practical,
+- exposure/brightness,
+- contrast,
+- saturation,
+- temperature/tint,
+- highlights/shadows,
+- sharpening,
+- simple filters.
+
+Photo support should reuse project/effect concepts rather than becoming a separate app.
+
+## Phase 6 — Audio and music workflow
+
+Make audio editing unusually good instead of treating it as an afterthought.
+
+- extract audio from video,
+- trim/fade/normalize,
+- volume automation,
+- ducking,
+- waveform,
+- background music tracks,
+- voice-over recording,
+- optional beat/BPM analysis later.
+
+Add a Media Sources boundary so music can come from:
+- local files,
+- device audio library,
+- URL/import providers,
+- optional downloader/provider modules.
+
+Do not hard-wire a scraping/downloader implementation into the editor core.
+
+## Phase 7 — Media Sources and import providers
+
+Explore external discovery/import as optional providers.
+
+Candidates:
+- yt-dlp-backed URL importing,
+- service-specific extractor providers,
+- local/network storage providers,
+- open/licensed music catalogs.
+
+Requirements:
+- provider isolation,
+- clear provenance/licensing metadata,
+- failures do not break the editor,
+- provider updates can move faster than the core app,
+- no dependency on private APIs as a product-critical path.
+
+Instagram/Meta music should not be assumed available: treat it as research until a stable, permitted integration exists.
+
+## Phase 8 — Effects, graphics and advanced editing
+
+Only after timeline/project/export foundations are strong:
+
+- text,
+- stickers/images,
+- masks,
+- keyframes,
+- transitions,
+- LUT/color tools,
+- GPU effects,
+- captions/subtitles,
+- speech-to-text integration,
+- picture-in-picture,
+- speed ramps,
+- motion/transform animation.
+
+Prefer a preview/export architecture where the same effect model maps predictably to both paths.
+
+## Phase 9 — Extensibility
+
+If CMMR becomes large enough to justify it:
+
+- effect/plugin API,
+- import/export provider API,
+- scripting/headless operations,
+- agent/MCP control,
+- reusable presets,
+- optional downloaded assets/models.
+
+Do not build a plugin system before there are multiple real extension use cases.
+
+## Phase 10 — Distribution and updates
+
+Trigger: real repeated usage makes manual installs annoying.
+
+- real release signing,
+- stable/preview channels,
+- background update checks,
+- changelog,
+- update integrity verification,
+- rollback/failure handling.
+
+## Non-goals
+
+- mandatory accounts,
+- server-side video processing by default,
+- analytics as a prerequisite for core features,
+- advertisements,
+- cloud lock-in,
+- adding frameworks/languages for novelty,
+- copying CapCut's feature count while copying its complexity.
