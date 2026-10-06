@@ -27,7 +27,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
   String? _inputPath;
   String? _fileName;
   RangeValues _trim = const RangeValues(0, 1);
-  Rect _crop = const Rect.fromLTWH(0.05, 0.05, 0.90, 0.90);
+  Rect _crop = const Rect.fromLTWH(0, 0, 1, 1);
   double? _cropAspectRatio;
   List<String> _timelineThumbnails = const [];
   _EditorTool _activeTool = _EditorTool.trim;
@@ -84,7 +84,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
       _inputPath = path;
       _fileName = picked.name;
       _trim = RangeValues(0, durationSeconds);
-      _crop = const Rect.fromLTWH(0.05, 0.05, 0.90, 0.90);
+      _crop = const Rect.fromLTWH(0, 0, 1, 1);
       _cropAspectRatio = null;
       _cropEnabled = false;
       _fastTrim = false;
@@ -147,16 +147,17 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
   }
 
   Future<void> _seek(double seconds) async {
-    await _controller?.seekTo(_durationFromSeconds(seconds));
+    final controller = _controller;
+    if (controller == null) return;
+
+    if (controller.value.isPlaying) {
+      await controller.pause();
+    }
+    await controller.seekTo(_durationFromSeconds(seconds));
   }
 
   void _selectTool(_EditorTool tool) {
-    setState(() {
-      _activeTool = tool;
-      if (tool == _EditorTool.crop && !_cropEnabled) {
-        _cropEnabled = true;
-      }
-    });
+    setState(() => _activeTool = tool);
   }
 
   void _setCropPreset(double? targetAspectRatio) {
@@ -164,7 +165,6 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
     if (controller == null) return;
 
     setState(() {
-      _cropEnabled = true;
       _cropAspectRatio = targetAspectRatio;
     });
 
@@ -188,6 +188,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
     }
 
     setState(() {
+      _cropEnabled = true;
       _crop = Rect.fromLTWH(
         (1 - width) / 2,
         (1 - height) / 2,
@@ -201,7 +202,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
     setState(() {
       _cropEnabled = false;
       _cropAspectRatio = null;
-      _crop = const Rect.fromLTWH(0.05, 0.05, 0.90, 0.90);
+      _crop = const Rect.fromLTWH(0, 0, 1, 1);
     });
   }
 
@@ -290,6 +291,14 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
     );
   }
 
+  bool _isFullFrameCrop(Rect rect) {
+    const epsilon = 0.0001;
+    return rect.left.abs() < epsilon &&
+        rect.top.abs() < epsilon &&
+        (rect.right - 1).abs() < epsilon &&
+        (rect.bottom - 1).abs() < epsilon;
+  }
+
   Duration _durationFromSeconds(double seconds) {
     return Duration(microseconds: (seconds * 1000000).round());
   }
@@ -342,7 +351,12 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
               onTrimChanged: _setTrim,
               onSeek: _seek,
               onToolChanged: _selectTool,
-              onCropChanged: (value) => setState(() => _crop = value),
+              onCropChanged: (value) {
+                setState(() {
+                  _crop = value;
+                  _cropEnabled = !_isFullFrameCrop(value);
+                });
+              },
               onCropPreset: _setCropPreset,
               onResetCrop: _resetCrop,
               onFastTrimChanged: (value) {
@@ -477,7 +491,7 @@ class _Editor extends StatelessWidget {
                         children: [
                           const ColoredBox(color: Colors.black),
                           VideoPlayer(controller),
-                          if (activeTool == _EditorTool.crop && cropEnabled)
+                          if (activeTool == _EditorTool.crop)
                             CropOverlay(
                               rect: crop,
                               lockedNormalizedAspectRatio:
