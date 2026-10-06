@@ -41,6 +41,8 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
   bool _exporting = false;
   double _progress = 0;
   String? _message;
+  double? _pendingSeekSeconds;
+  bool _seekLoopRunning = false;
 
   @override
   void dispose() {
@@ -155,13 +157,27 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
   }
 
   Future<void> _seek(double seconds) async {
+    _pendingSeekSeconds = seconds;
+    if (_seekLoopRunning) return;
+
     final controller = _controller;
     if (controller == null) return;
 
-    if (controller.value.isPlaying) {
-      await controller.pause();
+    _seekLoopRunning = true;
+    try {
+      if (controller.value.isPlaying) {
+        await controller.pause();
+      }
+
+      while (mounted && identical(controller, _controller)) {
+        final next = _pendingSeekSeconds;
+        if (next == null) break;
+        _pendingSeekSeconds = null;
+        await controller.seekTo(_durationFromSeconds(next));
+      }
+    } finally {
+      _seekLoopRunning = false;
     }
-    await controller.seekTo(_durationFromSeconds(seconds));
   }
 
   Future<void> _stepBy(Duration delta) async {
@@ -545,18 +561,21 @@ class _Editor extends StatelessWidget {
                   aspectRatio: videoAspect,
                   child: LayoutBuilder(
                     builder: (context, canvasConstraints) {
-                      final canvasSize = Size(
-                        canvasConstraints.maxWidth,
-                        canvasConstraints.maxHeight,
-                      );
-
                       return ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
                             const ColoredBox(color: Colors.black),
-                            VideoPlayer(controller),
+                            if (activeTool == _EditorTool.crop)
+                              VideoPlayer(controller)
+                            else
+                              _CroppedVideoPreview(
+                                controller: controller,
+                                crop: cropEnabled
+                                    ? crop
+                                    : const Rect.fromLTWH(0, 0, 1, 1),
+                              ),
                             if (activeTool == _EditorTool.crop)
                               CropOverlay(
                                 rect: crop,
@@ -566,13 +585,6 @@ class _Editor extends StatelessWidget {
                                 onPrecisionPointChanged:
                                     onCropPrecisionPointChanged,
                                 onPrecisionEnd: onCropPrecisionEnd,
-                              ),
-                            if (activeTool == _EditorTool.crop &&
-                                cropPrecisionPoint != null)
-                              _CropPrecisionLoupe(
-                                controller: controller,
-                                point: cropPrecisionPoint!,
-                                canvasSize: canvasSize,
                               ),
                             if (activeTool == _EditorTool.crop)
                               Positioned(
@@ -610,9 +622,14 @@ class _Editor extends StatelessWidget {
           return Column(
             children: [
               if (activeTool == _EditorTool.crop)
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+                  child: SizedBox(
+                    height: math.min(
+                      availableWidth / videoAspect,
+                      constraints.maxHeight * 0.56,
+                    ),
+                    width: double.infinity,
                     child: videoCanvas(),
                   ),
                 )
@@ -718,6 +735,59 @@ class _Editor extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _CroppedVideoPreview extends StatelessWidget {
+  const _CroppedVideoPreview({
+    required this.controller,
+    required this.crop,
+  });
+
+  final VideoPlayerController controller;
+  final Rect crop;
+
+  @override
+  Widget build(BuildContext context) {
+    final safeWidth = crop.width.clamp(0.0001, 1.0).toDouble();
+    final safeHeight = crop.height.clamp(0.0001, 1.0).toDouble();
+    final sourceAspect = controller.value.aspectRatio <= 0
+        ? 16 / 9
+        : controller.value.aspectRatio;
+    final croppedAspect = sourceAspect * safeWidth / safeHeight;
+
+    return Center(
+      child: AspectRatio(
+        aspectRatio: croppedAspect,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final fullWidth = constraints.maxWidth / safeWidth;
+            final fullHeight = constraints.maxHeight / safeHeight;
+
+            return ClipRect(
+              child: OverflowBox(
+                alignment: Alignment.topLeft,
+                minWidth: 0,
+                minHeight: 0,
+                maxWidth: double.infinity,
+                maxHeight: double.infinity,
+                child: Transform.translate(
+                  offset: Offset(
+                    -crop.left * fullWidth,
+                    -crop.top * fullHeight,
+                  ),
+                  child: SizedBox(
+                    width: fullWidth,
+                    height: fullHeight,
+                    child: VideoPlayer(controller),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
