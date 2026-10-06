@@ -90,13 +90,10 @@ class TrimTimeline extends StatelessWidget {
                           width: (endX - startX).clamp(0.0, width).toDouble(),
                           top: 0,
                           bottom: 0,
-                          child: IgnorePointer(
+                          child: const IgnorePointer(
                             child: DecoratedBox(
                               decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 2,
-                                ),
+                                color: Color(0x12000000),
                               ),
                             ),
                           ),
@@ -261,6 +258,7 @@ class _TrimHandle extends StatelessWidget {
       width: TrimTimeline._handleHitWidth,
       height: TrimTimeline._trackHeight + 10,
       child: GestureDetector(
+        key: ValueKey(isStart ? 'trim-start-handle' : 'trim-end-handle'),
         behavior: HitTestBehavior.opaque,
         onHorizontalDragUpdate: (details) => onDrag(details.delta.dx),
         child: Center(
