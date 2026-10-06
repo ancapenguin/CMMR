@@ -5,7 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
-import 'crop_overlay.dart';
+import 'crop_workspace.dart';
 import 'media_exporter.dart';
 import 'timeline_thumbnail_service.dart';
 import 'trim_timeline.dart';
@@ -29,6 +29,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
   RangeValues _trim = const RangeValues(0, 1);
   Rect _crop = const Rect.fromLTWH(0, 0, 1, 1);
   double? _cropAspectRatio;
+  Offset? _cropPrecisionPoint;
   List<String> _timelineThumbnails = const [];
   _EditorTool _activeTool = _EditorTool.trim;
   bool _cropEnabled = false;
@@ -88,6 +89,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
       _trim = RangeValues(0, durationSeconds);
       _crop = const Rect.fromLTWH(0, 0, 1, 1);
       _cropAspectRatio = null;
+      _cropPrecisionPoint = null;
       _cropEnabled = false;
       _fastTrim = false;
       _activeTool = _EditorTool.trim;
@@ -196,7 +198,12 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
   }
 
   void _selectTool(_EditorTool tool) {
-    setState(() => _activeTool = tool);
+    setState(() {
+      _activeTool = tool;
+      if (tool != _EditorTool.crop) {
+        _cropPrecisionPoint = null;
+      }
+    });
   }
 
   void _setCropPreset(double? targetAspectRatio) {
@@ -241,6 +248,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
     setState(() {
       _cropEnabled = false;
       _cropAspectRatio = null;
+      _cropPrecisionPoint = null;
       _crop = const Rect.fromLTWH(0, 0, 1, 1);
     });
   }
@@ -380,6 +388,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
               crop: _crop,
               cropEnabled: _cropEnabled,
               cropAspectRatio: _cropAspectRatio,
+              cropPrecisionPoint: _cropPrecisionPoint,
               activeTool: _activeTool,
               fastTrim: _fastTrim,
               exporting: _exporting,
@@ -401,6 +410,12 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
                 });
               },
               onCropPreset: _setCropPreset,
+              onCropPrecisionPointChanged: (value) {
+                setState(() => _cropPrecisionPoint = value);
+              },
+              onCropPrecisionEnd: () {
+                setState(() => _cropPrecisionPoint = null);
+              },
               onResetCrop: _resetCrop,
               onFastTrimChanged: (value) {
                 setState(() => _fastTrim = value);
@@ -464,6 +479,7 @@ class _Editor extends StatelessWidget {
     required this.crop,
     required this.cropEnabled,
     required this.cropAspectRatio,
+    required this.cropPrecisionPoint,
     required this.activeTool,
     required this.fastTrim,
     required this.exporting,
@@ -478,6 +494,8 @@ class _Editor extends StatelessWidget {
     required this.onToolChanged,
     required this.onCropChanged,
     required this.onCropPreset,
+    required this.onCropPrecisionPointChanged,
+    required this.onCropPrecisionEnd,
     required this.onResetCrop,
     required this.onFastTrimChanged,
   });
@@ -487,6 +505,7 @@ class _Editor extends StatelessWidget {
   final Rect crop;
   final bool cropEnabled;
   final double? cropAspectRatio;
+  final Offset? cropPrecisionPoint;
   final _EditorTool activeTool;
   final bool fastTrim;
   final bool exporting;
@@ -501,6 +520,8 @@ class _Editor extends StatelessWidget {
   final ValueChanged<_EditorTool> onToolChanged;
   final ValueChanged<Rect> onCropChanged;
   final ValueChanged<double?> onCropPreset;
+  final ValueChanged<Offset> onCropPrecisionPointChanged;
+  final VoidCallback onCropPrecisionEnd;
   final VoidCallback onResetCrop;
   final ValueChanged<bool> onFastTrimChanged;
 
@@ -528,6 +549,10 @@ class _Editor extends StatelessWidget {
             availableWidth / videoAspect,
             constraints.maxHeight * 0.46,
           );
+          final cropCanvasHeight = math.min(
+            availableWidth / videoAspect,
+            constraints.maxHeight * 0.56,
+          );
 
           Widget videoCanvas() {
             return Center(
@@ -545,20 +570,22 @@ class _Editor extends StatelessWidget {
                       children: [
                             const ColoredBox(color: Colors.black),
                             if (activeTool == _EditorTool.crop)
-                              VideoPlayer(controller)
+                              CropWorkspace(
+                                controller: controller,
+                                crop: crop,
+                                lockedNormalizedAspectRatio:
+                                    lockedNormalizedAspectRatio,
+                                onCropChanged: onCropChanged,
+                                onPrecisionPointChanged:
+                                    onCropPrecisionPointChanged,
+                                onPrecisionEnd: onCropPrecisionEnd,
+                              )
                             else
                               _CroppedVideoPreview(
                                 controller: controller,
                                 crop: cropEnabled
                                     ? crop
                                     : const Rect.fromLTWH(0, 0, 1, 1),
-                              ),
-                            if (activeTool == _EditorTool.crop)
-                              CropOverlay(
-                                rect: crop,
-                                lockedNormalizedAspectRatio:
-                                    lockedNormalizedAspectRatio,
-                                onChanged: onCropChanged,
                               ),
                             if (activeTool == _EditorTool.crop)
                               Positioned(
@@ -591,16 +618,15 @@ class _Editor extends StatelessWidget {
             );
           }
 
-          return Column(
+          return Stack(
             children: [
+              Column(
+                children: [
               if (activeTool == _EditorTool.crop)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
                   child: SizedBox(
-                    height: math.min(
-                      availableWidth / videoAspect,
-                      constraints.maxHeight * 0.56,
-                    ),
+                    height: cropCanvasHeight,
                     width: double.infinity,
                     child: videoCanvas(),
                   ),
@@ -702,6 +728,21 @@ class _Editor extends StatelessWidget {
                           ? Theme.of(context).colorScheme.error
                           : Colors.white70,
                     ),
+                  ),
+                ),
+                ],
+              ),
+              if (activeTool == _EditorTool.crop &&
+                  cropPrecisionPoint != null)
+                Positioned(
+                  right: 22,
+                  top: math.min(
+                    cropCanvasHeight + 18,
+                    constraints.maxHeight - 170,
+                  ),
+                  child: _CropPrecisionLoupe(
+                    controller: controller,
+                    point: cropPrecisionPoint!,
                   ),
                 ),
             ],
@@ -847,36 +888,32 @@ class _CropPrecisionLoupe extends StatelessWidget {
   const _CropPrecisionLoupe({
     required this.controller,
     required this.point,
-    required this.canvasSize,
   });
 
   final VideoPlayerController controller;
   final Offset point;
-  final Size canvasSize;
 
-  static const double _diameter = 108;
-  static const double _scale = 3;
+  static const double _diameter = 104;
+  static const double _scale = 3.2;
 
   @override
   Widget build(BuildContext context) {
-    final maxLeft = math.max(10.0, canvasSize.width - _diameter - 10);
-    final left = (point.dx * canvasSize.width - _diameter / 2)
-        .clamp(10.0, maxLeft)
-        .toDouble();
+    final aspect = controller.value.aspectRatio <= 0
+        ? 16 / 9
+        : controller.value.aspectRatio;
 
-    final top = point.dy < 0.5
-        ? math.max(10.0, canvasSize.height - _diameter - 10)
-        : 10.0;
+    final scaledWidth = aspect >= 1
+        ? _diameter * _scale * aspect
+        : _diameter * _scale;
+    final scaledHeight = aspect >= 1
+        ? _diameter * _scale
+        : _diameter * _scale / aspect;
 
-    final scaledWidth = canvasSize.width * _scale;
-    final scaledHeight = canvasSize.height * _scale;
     final sourceLeft = _diameter / 2 - point.dx * scaledWidth;
     final sourceTop = _diameter / 2 - point.dy * scaledHeight;
 
-    return Positioned(
+    return SizedBox(
       key: const ValueKey('crop-precision-loupe'),
-      left: left,
-      top: top,
       width: _diameter,
       height: _diameter,
       child: IgnorePointer(
