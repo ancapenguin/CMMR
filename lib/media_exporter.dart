@@ -71,24 +71,7 @@ class MediaExporter {
     var reencoded = request.crop != null || !request.fastTrim;
     var usedSoftwareFallback = false;
 
-    if (!reencoded) {
-      try {
-        await _run(
-          _fastTrimArguments(request, outputPath),
-          request.duration,
-          onProgress,
-        );
-      } catch (_) {
-        reencoded = true;
-        await _deleteIfPresent(outputPath);
-        onProgress?.call(0);
-        await _run(
-          _hardwareArguments(request, outputPath),
-          request.duration,
-          onProgress,
-        );
-      }
-    } else {
+    Future<void> reencode() async {
       try {
         await _run(
           _hardwareArguments(request, outputPath),
@@ -105,6 +88,23 @@ class MediaExporter {
           onProgress,
         );
       }
+    }
+
+    if (!reencoded) {
+      try {
+        await _run(
+          _fastTrimArguments(request, outputPath),
+          request.duration,
+          onProgress,
+        );
+      } catch (_) {
+        reencoded = true;
+        await _deleteIfPresent(outputPath);
+        onProgress?.call(0);
+        await reencode();
+      }
+    } else {
+      await reencode();
     }
 
     final hasGalleryAccess = await Gal.hasAccess(toAlbum: true);
