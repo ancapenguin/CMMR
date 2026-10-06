@@ -47,6 +47,12 @@ jobs:
       - name: Resolve Flutter packages
         run: flutter pub get
 
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
       - name: Build optimized APKs by CPU architecture
         run: flutter build apk --release --split-per-abi
 
