@@ -670,25 +670,10 @@ class _Editor extends StatelessWidget {
                   ),
                 ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: SegmentedButton<_EditorTool>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(
-                      value: _EditorTool.trim,
-                      icon: Icon(Icons.content_cut_rounded),
-                      label: Text('Kes'),
-                    ),
-                    ButtonSegment(
-                      value: _EditorTool.crop,
-                      icon: Icon(Icons.crop_rounded),
-                      label: Text('Kırp'),
-                    ),
-                  ],
-                  selected: {activeTool},
-                  onSelectionChanged: exporting
-                      ? null
-                      : (selection) => onToolChanged(selection.first),
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                child: _ToolRail(
+                  selected: activeTool,
+                  onChanged: exporting ? null : onToolChanged,
                 ),
               ),
               AnimatedSwitcher(
@@ -996,6 +981,70 @@ class _LoupeCrosshairPainter extends CustomPainter {
   bool shouldRepaint(covariant _LoupeCrosshairPainter oldDelegate) => false;
 }
 
+class _ToolRail extends StatelessWidget {
+  const _ToolRail({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final _EditorTool selected;
+  final ValueChanged<_EditorTool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const tools = <(_EditorTool, IconData, String)>[
+      (_EditorTool.trim, Icons.content_cut_rounded, 'Kes'),
+      (_EditorTool.crop, Icons.crop_rounded, 'Kırp'),
+    ];
+
+    return SizedBox(
+      height: 58,
+      child: Align(
+        alignment: Alignment.center,
+        child: ListView.separated(
+          shrinkWrap: true,
+          scrollDirection: Axis.horizontal,
+          itemCount: tools.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 6),
+          itemBuilder: (context, index) {
+            final tool = tools[index];
+            final isSelected = selected == tool.$1;
+
+            return Material(
+              color: isSelected
+                  ? Theme.of(context).colorScheme.primaryContainer
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: onChanged == null ? null : () => onChanged!(tool.$1),
+                child: SizedBox(
+                  width: 82,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(tool.$2, size: 22),
+                      const SizedBox(height: 3),
+                      Text(
+                        tool.$3,
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                              fontWeight: isSelected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
 class _TrimPanel extends StatelessWidget {
   const _TrimPanel({
     required this.fastTrim,
@@ -1010,79 +1059,53 @@ class _TrimPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final effectiveFast = fastTrim && !cropEnabled;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+      child: Column(
         children: [
-          Expanded(
-            child: _ModeChoice(
-              selected: !fastTrim,
-              title: 'Kesin',
-              subtitle: cropEnabled
-                  ? 'Kırpma nedeniyle zaten yeniden kodlanacak'
-                  : 'Tam karede keser',
-              onTap: cropEnabled ? null : () => onChanged(false),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _ModeChoice(
-              selected: fastTrim && !cropEnabled,
-              title: 'Hızlı',
-              subtitle: 'Kayıpsız · keyframe sınırı',
-              onTap: cropEnabled ? null : () => onChanged(true),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ModeChoice extends StatelessWidget {
-  const _ModeChoice({
-    required this.selected,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final bool selected;
-  final String title;
-  final String subtitle;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected
-          ? Theme.of(context).colorScheme.primaryContainer
-          : Theme.of(context).colorScheme.surfaceContainer,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
             children: [
               Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                'Kesim',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       color: Colors.white70,
                     ),
               ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SegmentedButton<bool>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('Kesin')),
+                    ButtonSegment(value: true, label: Text('Hızlı')),
+                  ],
+                  selected: {effectiveFast},
+                  onSelectionChanged: cropEnabled
+                      ? null
+                      : (selection) => onChanged(selection.first),
+                ),
+              ),
             ],
           ),
-        ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              cropEnabled
+                  ? 'Kırpma açık · çıktı yeniden kodlanacak.'
+                  : effectiveFast
+                      ? 'Kayıpsız ve hızlı; başlangıç keyframe sınırına kayabilir.'
+                      : 'İstenen sınıra odaklanır; gerektiğinde yeniden kodlar.',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.white54,
+                  ),
+            ),
+          ),
+        ],
       ),
     );
   }
