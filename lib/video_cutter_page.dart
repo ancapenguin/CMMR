@@ -29,6 +29,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
   RangeValues _trim = const RangeValues(0, 1);
   Rect _crop = const Rect.fromLTWH(0, 0, 1, 1);
   double? _cropAspectRatio;
+  Offset? _cropPrecisionPoint;
   List<String> _timelineThumbnails = const [];
   _EditorTool _activeTool = _EditorTool.trim;
   bool _cropEnabled = false;
@@ -86,6 +87,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
       _trim = RangeValues(0, durationSeconds);
       _crop = const Rect.fromLTWH(0, 0, 1, 1);
       _cropAspectRatio = null;
+      _cropPrecisionPoint = null;
       _cropEnabled = false;
       _fastTrim = false;
       _activeTool = _EditorTool.trim;
@@ -163,7 +165,12 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
   }
 
   void _selectTool(_EditorTool tool) {
-    setState(() => _activeTool = tool);
+    setState(() {
+      _activeTool = tool;
+      if (tool != _EditorTool.crop) {
+        _cropPrecisionPoint = null;
+      }
+    });
   }
 
   void _setCropPreset(double? targetAspectRatio) {
@@ -208,6 +215,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
     setState(() {
       _cropEnabled = false;
       _cropAspectRatio = null;
+      _cropPrecisionPoint = null;
       _crop = const Rect.fromLTWH(0, 0, 1, 1);
     });
   }
@@ -347,6 +355,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
               crop: _crop,
               cropEnabled: _cropEnabled,
               cropAspectRatio: _cropAspectRatio,
+              cropPrecisionPoint: _cropPrecisionPoint,
               activeTool: _activeTool,
               fastTrim: _fastTrim,
               exporting: _exporting,
@@ -364,6 +373,12 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
                 });
               },
               onCropPreset: _setCropPreset,
+              onCropPrecisionPointChanged: (value) {
+                setState(() => _cropPrecisionPoint = value);
+              },
+              onCropPrecisionEnd: () {
+                setState(() => _cropPrecisionPoint = null);
+              },
               onResetCrop: _resetCrop,
               onFastTrimChanged: (value) {
                 setState(() => _fastTrim = value);
@@ -427,6 +442,7 @@ class _Editor extends StatelessWidget {
     required this.crop,
     required this.cropEnabled,
     required this.cropAspectRatio,
+    required this.cropPrecisionPoint,
     required this.activeTool,
     required this.fastTrim,
     required this.exporting,
@@ -439,6 +455,8 @@ class _Editor extends StatelessWidget {
     required this.onToolChanged,
     required this.onCropChanged,
     required this.onCropPreset,
+    required this.onCropPrecisionPointChanged,
+    required this.onCropPrecisionEnd,
     required this.onResetCrop,
     required this.onFastTrimChanged,
   });
@@ -448,6 +466,7 @@ class _Editor extends StatelessWidget {
   final Rect crop;
   final bool cropEnabled;
   final double? cropAspectRatio;
+  final Offset? cropPrecisionPoint;
   final _EditorTool activeTool;
   final bool fastTrim;
   final bool exporting;
@@ -460,6 +479,8 @@ class _Editor extends StatelessWidget {
   final ValueChanged<_EditorTool> onToolChanged;
   final ValueChanged<Rect> onCropChanged;
   final ValueChanged<double?> onCropPreset;
+  final ValueChanged<Offset> onCropPrecisionPointChanged;
+  final VoidCallback onCropPrecisionEnd;
   final VoidCallback onResetCrop;
   final ValueChanged<bool> onFastTrimChanged;
 
@@ -497,42 +518,62 @@ class _Editor extends StatelessWidget {
                 ),
                 child: AspectRatio(
                   aspectRatio: videoAspect,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        const ColoredBox(color: Colors.black),
-                        VideoPlayer(controller),
-                        if (activeTool == _EditorTool.crop)
-                          CropOverlay(
-                            rect: crop,
-                            lockedNormalizedAspectRatio:
-                                lockedNormalizedAspectRatio,
-                            onChanged: onCropChanged,
-                          ),
-                        Positioned(
-                          left: 10,
-                          bottom: 10,
-                          child: ValueListenableBuilder<VideoPlayerValue>(
-                            valueListenable: controller,
-                            builder: (context, value, _) {
-                              return IconButton.filledTonal(
-                                tooltip:
-                                    value.isPlaying ? 'Duraklat' : 'Oynat',
-                                onPressed:
-                                    exporting ? null : onTogglePlayback,
-                                icon: Icon(
-                                  value.isPlaying
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                ),
-                              );
-                            },
-                          ),
+                  child: LayoutBuilder(
+                    builder: (context, canvasConstraints) {
+                      final canvasSize = Size(
+                        canvasConstraints.maxWidth,
+                        canvasConstraints.maxHeight,
+                      );
+
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            const ColoredBox(color: Colors.black),
+                            VideoPlayer(controller),
+                            if (activeTool == _EditorTool.crop)
+                              CropOverlay(
+                                rect: crop,
+                                lockedNormalizedAspectRatio:
+                                    lockedNormalizedAspectRatio,
+                                onChanged: onCropChanged,
+                                onPrecisionPointChanged:
+                                    onCropPrecisionPointChanged,
+                                onPrecisionEnd: onCropPrecisionEnd,
+                              ),
+                            if (activeTool == _EditorTool.crop &&
+                                cropPrecisionPoint != null)
+                              _CropPrecisionLoupe(
+                                controller: controller,
+                                point: cropPrecisionPoint!,
+                                canvasSize: canvasSize,
+                              ),
+                            Positioned(
+                              left: 10,
+                              bottom: 10,
+                              child: ValueListenableBuilder<VideoPlayerValue>(
+                                valueListenable: controller,
+                                builder: (context, value, _) {
+                                  return IconButton.filledTonal(
+                                    tooltip: value.isPlaying
+                                        ? 'Duraklat'
+                                        : 'Oynat',
+                                    onPressed:
+                                        exporting ? null : onTogglePlayback,
+                                    icon: Icon(
+                                      value.isPlaying
+                                          ? Icons.pause_rounded
+                                          : Icons.play_arrow_rounded,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -642,6 +683,122 @@ class _Editor extends StatelessWidget {
       ),
     );
   }
+}
+
+class _CropPrecisionLoupe extends StatelessWidget {
+  const _CropPrecisionLoupe({
+    required this.controller,
+    required this.point,
+    required this.canvasSize,
+  });
+
+  final VideoPlayerController controller;
+  final Offset point;
+  final Size canvasSize;
+
+  static const double _diameter = 108;
+  static const double _scale = 3;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxLeft = math.max(10.0, canvasSize.width - _diameter - 10);
+    final left = (point.dx * canvasSize.width - _diameter / 2)
+        .clamp(10.0, maxLeft)
+        .toDouble();
+
+    final top = point.dy < 0.5
+        ? math.max(10.0, canvasSize.height - _diameter - 10)
+        : 10.0;
+
+    final scaledWidth = canvasSize.width * _scale;
+    final scaledHeight = canvasSize.height * _scale;
+    final sourceLeft = _diameter / 2 - point.dx * scaledWidth;
+    final sourceTop = _diameter / 2 - point.dy * scaledHeight;
+
+    return Positioned(
+      key: const ValueKey('crop-precision-loupe'),
+      left: left,
+      top: top,
+      width: _diameter,
+      height: _diameter,
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x99000000),
+                blurRadius: 10,
+              ),
+            ],
+          ),
+          child: ClipOval(
+            child: Stack(
+              clipBehavior: Clip.hardEdge,
+              children: [
+                Positioned(
+                  left: sourceLeft,
+                  top: sourceTop,
+                  width: scaledWidth,
+                  height: scaledHeight,
+                  child: VideoPlayer(controller),
+                ),
+                const Center(
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CustomPaint(
+                      painter: _LoupeCrosshairPainter(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoupeCrosshairPainter extends CustomPainter {
+  const _LoupeCrosshairPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final shadow = Paint()
+      ..color = Colors.black54
+      ..strokeWidth = 3;
+    final line = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 1;
+
+    final center = Offset(size.width / 2, size.height / 2);
+    canvas.drawLine(
+      Offset(center.dx, 0),
+      Offset(center.dx, size.height),
+      shadow,
+    );
+    canvas.drawLine(
+      Offset(0, center.dy),
+      Offset(size.width, center.dy),
+      shadow,
+    );
+    canvas.drawLine(
+      Offset(center.dx, 0),
+      Offset(center.dx, size.height),
+      line,
+    );
+    canvas.drawLine(
+      Offset(0, center.dy),
+      Offset(size.width, center.dy),
+      line,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _LoupeCrosshairPainter oldDelegate) => false;
 }
 
 class _TrimPanel extends StatelessWidget {
