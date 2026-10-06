@@ -43,6 +43,55 @@ void main() {
     expect(sought, closeTo(2, 0.01));
   });
 
+  testWidgets('timeline pinch zoom expands the editable time surface',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 400,
+              height: 130,
+              child: TrimTimeline(
+                durationSeconds: 20,
+                range: const RangeValues(0, 20),
+                positionSeconds: 5,
+                thumbnailPaths: const [],
+                onRangeChanged: (_) {},
+                onSeek: (_) {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final contentFinder =
+        find.byKey(const ValueKey('trim-timeline-content'));
+    final scrollFinder =
+        find.byKey(const ValueKey('trim-timeline-scroll'));
+
+    final initialWidth = tester.getSize(contentFinder).width;
+    expect(initialWidth, closeTo(400, 0.1));
+
+    final center = tester.getCenter(scrollFinder);
+    final first =
+        await tester.startGesture(center + const Offset(-45, 0), pointer: 1);
+    final second =
+        await tester.startGesture(center + const Offset(45, 0), pointer: 2);
+    await tester.pump();
+
+    await first.moveTo(center + const Offset(-120, 0));
+    await second.moveTo(center + const Offset(120, 0));
+    await tester.pump();
+
+    expect(tester.getSize(contentFinder).width, greaterThan(initialWidth));
+
+    await first.up();
+    await second.up();
+    await tester.pump();
+  });
+
   testWidgets('locked crop handle keeps its ratio and remains easy to grab',
       (tester) async {
     Rect? changed;
