@@ -4,24 +4,28 @@
 
 CMMR is a mobile app workshop/monorepo for building small, useful, weird, or experimental apps for fun. It is not one product and it should not accumulate infrastructure without a real app that needs it.
 
+The primary workflow is intentionally simple: an idea should be implementable from Codex/ChatGPT, built in CI, installed on a phone, and iterated without requiring a large local mobile toolchain.
+
 The repository should optimize for:
 1. fast idea -> installable app,
 2. low maintenance,
-3. clear boundaries between apps,
-4. native capability when it materially helps,
+3. a small and predictable default stack,
+4. clear boundaries between apps,
 5. keeping experiments disposable.
 
 ## Default technical policy
 
 ### UI / application layer
-- Default to Flutter + Dart for a new mobile app.
-- Flutter is a default, not a mandate.
-- Use native Android (Kotlin + Jetpack Compose) when the app is Android-only and native APIs, background work, widgets, services, accessibility, system integration, or platform UX would otherwise be awkward.
-- Do not introduce React Native, another UI framework, or another language merely for variety. An experiment may use one, but its app-local README must state why.
+- Use Flutter + Dart for CMMR mobile app UI.
+- Do not introduce a second mobile UI framework merely because a feature is Android-specific.
+- Prefer maintained Flutter plugins for platform capabilities.
+- If Android-specific native code is unavoidable, keep it behind a narrow Flutter plugin/platform-channel boundary. Do not move the UI to a native framework.
+- An experiment whose explicit purpose is evaluating another framework may ignore this rule, but it must stay isolated and document why.
 
 ### Native/core code
-- Keep ordinary product logic in Dart/Kotlin.
-- Introduce Rust only for a concrete reason: CPU-heavy work, a reusable protocol/parser/engine, cryptography-sensitive code, memory-safety-sensitive native work, or a core that must be shared with non-Flutter targets.
+- Keep ordinary product logic in Dart.
+- Introduce Rust only for code CMMR actually owns and benefits from implementing natively: a measurable CPU-heavy algorithm, reusable parser/protocol/engine, security-sensitive native component, or a core shared across frontends.
+- Do not add Rust merely to wrap an already-native engine such as FFmpeg. A Rust wrapper around the same FFmpeg codecs does not make the codecs faster.
 - Do not add Rust/FFI pre-emptively.
 
 ### Services / tooling
@@ -72,7 +76,7 @@ A new app should begin with the smallest vertical slice that proves the idea:
 - basic error state exists,
 - CI can analyze/test/build it.
 
-Do not begin a new app by building a design system, updater, account system, analytics layer, dependency injection framework, navigation abstraction, or generic architecture.
+Do not begin a new app by building a design system, updater, account system, analytics layer, dependency injection framework, navigation abstraction, generic architecture, or alternate native UI implementation.
 
 ## Updates and distribution
 
@@ -100,6 +104,7 @@ When working in this repository:
 - read this file and the relevant app README first,
 - prefer a working vertical slice over speculative architecture,
 - keep changes scoped,
+- verify current package APIs and versions before adding dependencies,
 - explain any new framework/language/tooling choice in the PR,
 - preserve existing build/release behavior unless changing it intentionally,
 - do not hide failures with disabled checks or blanket ignores,
