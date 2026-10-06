@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 
 enum _CropCorner { topLeft, topRight, bottomLeft, bottomRight }
 
-class CropOverlay extends StatelessWidget {
+class CropOverlay extends StatefulWidget {
   const CropOverlay({
     required this.rect,
     required this.onChanged,
     this.lockedNormalizedAspectRatio,
+    this.onPrecisionPointChanged,
+    this.onPrecisionEnd,
     super.key,
   });
 
@@ -19,8 +21,20 @@ class CropOverlay extends StatelessWidget {
   /// Null means freeform resizing.
   final double? lockedNormalizedAspectRatio;
 
+  /// Normalized source point currently manipulated by a crop handle.
+  final ValueChanged<Offset>? onPrecisionPointChanged;
+  final VoidCallback? onPrecisionEnd;
+
+  @override
+  State<CropOverlay> createState() => _CropOverlayState();
+}
+
+class _CropOverlayState extends State<CropOverlay> {
   static const _minimumSize = 0.08;
   static const _handleHitSize = 56.0;
+
+  Rect _dragStartRect = Rect.zero;
+  Offset _dragDelta = Offset.zero;
 
   @override
   Widget build(BuildContext context) {
@@ -28,10 +42,10 @@ class CropOverlay extends StatelessWidget {
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
         final pixelRect = Rect.fromLTRB(
-          rect.left * size.width,
-          rect.top * size.height,
-          rect.right * size.width,
-          rect.bottom * size.height,
+          widget.rect.left * size.width,
+          widget.rect.top * size.height,
+          widget.rect.right * size.width,
+          widget.rect.bottom * size.height,
         );
 
         return Stack(
@@ -40,15 +54,25 @@ class CropOverlay extends StatelessWidget {
             Positioned.fill(
               child: IgnorePointer(
                 child: CustomPaint(
-                  painter: _CropPainter(rect),
+                  painter: _CropPainter(widget.rect),
                 ),
               ),
             ),
             Positioned.fromRect(
               rect: pixelRect,
               child: GestureDetector(
+                key: const ValueKey('crop-move-area'),
                 behavior: HitTestBehavior.opaque,
-                onPanUpdate: (details) => _move(details.delta, size),
+                onPanStart: (_) {
+                  _dragStartRect = widget.rect;
+                  _dragDelta = Offset.zero;
+                },
+                onPanUpdate: (details) {
+                  _dragDelta += details.delta;
+                  widget.onChanged(
+                    _moveFrom(_dragStartRect, _dragDelta, size),
+                  );
+                },
                 child: const SizedBox.expand(),
               ),
             ),
@@ -79,7 +103,25 @@ class CropOverlay extends StatelessWidget {
       child: GestureDetector(
         key: ValueKey('crop-handle-${corner.name}'),
         behavior: HitTestBehavior.opaque,
-        onPanUpdate: (details) => _resize(corner, details.delta, size),
+        onPanStart: (_) {
+          _dragStartRect = widget.rect;
+          _dragDelta = Offset.zero;
+          widget.onPrecisionPointChanged?.call(_cornerPoint(widget.rect, corner));
+        },
+        onPanUpdate: (details) {
+          _dragDelta += details.delta;
+          final next = _resizeFrom(
+            _dragStartRect,
+            corner,
+            _dragDelta,
+            size,
+            widget.lockedNormalizedAspectRatio,
+          );
+          widget.onChanged(next);
+          widget.onPrecisionPointChanged?.call(_cornerPoint(next, corner));
+        },
+        onPanEnd: (_) => widget.onPrecisionEnd?.call(),
+        onPanCancel: () => widget.onPrecisionEnd?.call(),
         child: Align(
           alignment: switch (corner) {
             _CropCorner.topLeft => Alignment.topLeft,
@@ -93,36 +135,52 @@ class CropOverlay extends StatelessWidget {
     );
   }
 
-  void _move(Offset delta, Size size) {
-    final dx = delta.dx / size.width;
-    final dy = delta.dy / size.height;
-
-    final left =
-        (rect.left + dx).clamp(0.0, 1.0 - rect.width).toDouble();
-    final top =
-        (rect.top + dy).clamp(0.0, 1.0 - rect.height).toDouble();
-
-    onChanged(Rect.fromLTWH(left, top, rect.width, rect.height));
+  Offset _cornerPoint(Rect rect, _CropCorner corner) {
+    return switch (corner) {
+      _CropCorner.topLeft => rect.topLeft,
+      _CropCorner.topRight => rect.topRight,
+      _CropCorner.bottomLeft => rect.bottomLeft,
+      _CropCorner.bottomRight => rect.bottomRight,
+    };
   }
 
-  void _resize(_CropCorner corner, Offset delta, Size size) {
-    final dx = delta.dx / size.width;
-    final dy = delta.dy / size.height;
-    final ratio = lockedNormalizedAspectRatio;
+  Rect _moveFrom(Rect base, Offset pixelDelta, Size size) {
+    final dx = pixelDelta.dx / size.width;
+    final dy = pixelDelta.dy / size.height;
+
+    final left = (base.left + dx).clamp(0.0, 1.0 - base.width).toDouble();
+    final top = (base.top + dy).clamp(0.0, 1.0 - base.height).toDouble();
+
+    return Rect.fromLTWH(left, top, base.width, base.height);
+  }
+
+  Rect _resizeFrom(
+    Rect base,
+    _CropCorner corner,
+    Offset pixelDelta,
+    Size size,
+    double? ratio,
+  ) {
+    final dx = pixelDelta.dx / size.width;
+    final dy = pixelDelta.dy / size.height;
 
     if (ratio == null) {
-      _resizeFree(corner, dx, dy);
-      return;
+      return _resizeFree(base, corner, dx, dy);
     }
 
-    _resizeLocked(corner, dx, dy, ratio);
+    return _resizeLocked(base, corner, dx, dy, ratio);
   }
 
-  void _resizeFree(_CropCorner corner, double dx, double dy) {
-    var left = rect.left;
-    var top = rect.top;
-    var right = rect.right;
-    var bottom = rect.bottom;
+  Rect _resizeFree(
+    Rect base,
+    _CropCorner corner,
+    double dx,
+    double dy,
+  ) {
+    var left = base.left;
+    var top = base.top;
+    var right = base.right;
+    var bottom = base.bottom;
 
     switch (corner) {
       case _CropCorner.topLeft:
@@ -135,20 +193,23 @@ class CropOverlay extends StatelessWidget {
         break;
       case _CropCorner.bottomLeft:
         left = (left + dx).clamp(0.0, right - _minimumSize).toDouble();
-        bottom =
-            (bottom + dy).clamp(top + _minimumSize, 1.0).toDouble();
+        bottom = (bottom + dy)
+            .clamp(top + _minimumSize, 1.0)
+            .toDouble();
         break;
       case _CropCorner.bottomRight:
         right = (right + dx).clamp(left + _minimumSize, 1.0).toDouble();
-        bottom =
-            (bottom + dy).clamp(top + _minimumSize, 1.0).toDouble();
+        bottom = (bottom + dy)
+            .clamp(top + _minimumSize, 1.0)
+            .toDouble();
         break;
     }
 
-    onChanged(Rect.fromLTRB(left, top, right, bottom));
+    return Rect.fromLTRB(left, top, right, bottom);
   }
 
-  void _resizeLocked(
+  Rect _resizeLocked(
+    Rect base,
     _CropCorner corner,
     double dx,
     double dy,
@@ -169,33 +230,32 @@ class CropOverlay extends StatelessWidget {
     double width;
     double height;
     if (widthDelta.abs() >= (heightDelta * ratio).abs()) {
-      width = rect.width + widthDelta;
+      width = base.width + widthDelta;
       height = width / ratio;
     } else {
-      height = rect.height + heightDelta;
+      height = base.height + heightDelta;
       width = height * ratio;
     }
 
     final anchor = switch (corner) {
-      _CropCorner.topLeft => rect.bottomRight,
-      _CropCorner.topRight => rect.bottomLeft,
-      _CropCorner.bottomLeft => rect.topRight,
-      _CropCorner.bottomRight => rect.topLeft,
+      _CropCorner.topLeft => base.bottomRight,
+      _CropCorner.topRight => base.bottomLeft,
+      _CropCorner.bottomLeft => base.topRight,
+      _CropCorner.bottomRight => base.topLeft,
     };
 
     final maxWidth = horizontalSign < 0 ? anchor.dx : 1 - anchor.dx;
     final maxHeight = verticalSign < 0 ? anchor.dy : 1 - anchor.dy;
 
     final minWidth = math.max(_minimumSize, _minimumSize * ratio);
-    width = width
-        .clamp(minWidth, math.min(maxWidth, maxHeight * ratio))
-        .toDouble();
+    final availableWidth = math.min(maxWidth, maxHeight * ratio);
+    width = width.clamp(minWidth, math.max(minWidth, availableWidth)).toDouble();
     height = width / ratio;
 
     final left = horizontalSign < 0 ? anchor.dx - width : anchor.dx;
     final top = verticalSign < 0 ? anchor.dy - height : anchor.dy;
 
-    onChanged(Rect.fromLTWH(left, top, width, height));
+    return Rect.fromLTWH(left, top, width, height);
   }
 }
 
