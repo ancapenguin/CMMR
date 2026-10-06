@@ -1,12 +1,17 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 
 import 'crop_overlay.dart';
 import 'media_exporter.dart';
+import 'trim_timeline.dart';
+
+enum _EditorTool { trim, crop }
 
 class VideoCutterPage extends StatefulWidget {
   const VideoCutterPage({super.key});
@@ -22,12 +27,14 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
   String? _inputPath;
   String? _fileName;
   RangeValues _trim = const RangeValues(0, 1);
-  Rect _crop = const Rect.fromLTWH(0.05, 0.05, 0.90, 0.90);
+  Rect _crop = const Rect.fromLTWH(0.04, 0.04, 0.92, 0.92);
+  double? _cropAspectRatio;
   bool _cropEnabled = false;
   bool _fastTrim = true;
   bool _exporting = false;
   double _progress = 0;
-  String? _message;
+  _EditorTool _tool = _EditorTool.trim;
+  List<Uint8List?> _thumbnails = const [];
 
   @override
   void dispose() {
@@ -44,7 +51,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
     final path = picked?.path;
     if (picked == null || path == null) {
       if (picked != null) {
-        _setMessage('Bu dosya için kullanılabilir yerel yol alınamadı.');
+        _notify('Bu dosya için kullanılabilir yerel yol alınamadı.');
       }
       return;
     }
@@ -55,7 +62,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
       await next.setLooping(false);
     } catch (error) {
       await next.dispose();
-      _setMessage('Video açılamadı: $error');
+      _notify('Video açılamadı: $error');
       return;
     }
 
@@ -74,14 +81,45 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
       _inputPath = path;
       _fileName = picked.name;
       _trim = RangeValues(0, durationSeconds);
-      _crop = const Rect.fromLTWH(0.05, 0.05, 0.90, 0.90);
+      _crop = const Rect.fromLTWH(0.04, 0.04, 0.92, 0.92);
+      _cropAspectRatio = null;
       _cropEnabled = false;
       _fastTrim = true;
-      _message = null;
+      _tool = _EditorTool.trim;
       _progress = 0;
+      _thumbnails = const [];
     });
 
     await old?.dispose();
+    _generateThumbnails(path, next.value.duration);
+  }
+
+  Future<void> _generateThumbnails(String path, Duration duration) async {
+    const count = 9;
+    final generated = <Uint8List?>[];
+
+    for (var i = 0; i < count; i++) {
+      try {
+        final timeMs =
+            (((i + 0.5) / count) * duration.inMilliseconds).round();
+        generated.add(
+          await VideoThumbnail.thumbnailData(
+            video: path,
+            imageFormat: ImageFormat.JPEG,
+            maxHeight: 110,
+            timeMs: timeMs,
+            quality: 58,
+          ),
+        );
+      } catch (_) {
+        generated.add(null);
+      }
+    }
+
+    if (!mounted || _inputPath != path) {
+      return;
+    }
+    setState(() => _thumbnails = generated);
   }
 
   Future<void> _togglePlayback() async {
@@ -114,29 +152,60 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
       if (seconds >= _trim.end) {
         await controller.pause();
         await controller.seekTo(_durationFromSeconds(_trim.start));
-        if (mounted) {
-          setState(() {});
-        }
         return;
       }
-      await Future<void>.delayed(const Duration(milliseconds: 80));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
   }
 
-  void _setTrim(RangeValues values) {
-    if (values.end - values.start < 0.05) {
-      return;
+  Future<void> _seek(double seconds) async {
+    await _controller?.seekTo(_durationFromSeconds(seconds));
+  }
+
+  void _setTrimStart(double start) {
+    setState(() => _trim = RangeValues(start, _trim.end));
+    _seek(start);
+  }
+
+  void _setTrimEnd(double end) {
+    setState(() => _trim = RangeValues(_trim.start, end));
+    _seek(end);
+  }
+
+  void _selectTool(_EditorTool tool) {
+    setState(() {
+      _tool = tool;
+      if (tool == _EditorTool.crop) {
+        _cropEnabled = true;
+      }
+    });
+  }
+
+  double? get _lockedNormalizedCropRatio {
+    final controller = _controller;
+    final target = _cropAspectRatio;
+    if (controller == null || target == null) {
+      return null;
     }
-    setState(() => _trim = values);
+
+    final source = controller.value.size;
+    if (source.width <= 0 || source.height <= 0) {
+      return null;
+    }
+    return target / (source.width / source.height);
   }
 
-  Future<void> _seekToTrimStart() async {
-    await _controller?.seekTo(_durationFromSeconds(_trim.start));
-  }
-
-  void _setCropPreset(double targetAspectRatio) {
+  void _setCropPreset(double? targetAspectRatio) {
     final controller = _controller;
     if (controller == null) {
+      return;
+    }
+
+    if (targetAspectRatio == null) {
+      setState(() {
+        _cropEnabled = true;
+        _cropAspectRatio = null;
+      });
       return;
     }
 
@@ -145,8 +214,8 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
       return;
     }
 
-    final sourceAspect = source.width / source.height;
-    final normalizedRatio = targetAspectRatio / sourceAspect;
+    final normalizedRatio =
+        targetAspectRatio / (source.width / source.height);
     const maximum = 0.92;
 
     late final double width;
@@ -161,12 +230,22 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
 
     setState(() {
       _cropEnabled = true;
+      _cropAspectRatio = targetAspectRatio;
       _crop = Rect.fromLTWH(
         (1 - width) / 2,
         (1 - height) / 2,
         width,
         height,
       );
+    });
+  }
+
+  void _removeCrop() {
+    setState(() {
+      _cropEnabled = false;
+      _cropAspectRatio = null;
+      _crop = const Rect.fromLTWH(0.04, 0.04, 0.92, 0.92);
+      _tool = _EditorTool.trim;
     });
   }
 
@@ -179,7 +258,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
 
     final sourceSize = controller.value.size;
     if (sourceSize.width <= 0 || sourceSize.height <= 0) {
-      _setMessage('Video boyutu okunamadı.');
+      _notify('Video boyutu okunamadı.');
       return;
     }
 
@@ -192,7 +271,6 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
     setState(() {
       _exporting = true;
       _progress = 0;
-      _message = null;
     });
 
     try {
@@ -217,17 +295,15 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
         return;
       }
 
-      setState(() {
-        final mode = !result.reencoded
-            ? 'Hızlı, yeniden kodlamasız trim'
-            : result.usedSoftwareFallback
-                ? 'Yazılımsal yeniden kodlama'
-                : 'Donanım hızlandırmalı yeniden kodlama';
-        _message = 'Galeriye kaydedildi. $mode kullanıldı.';
-      });
+      final mode = !result.reencoded
+          ? 'Kayıpsız hızlı kesim'
+          : result.usedSoftwareFallback
+              ? 'Yazılımsal yeniden kodlama'
+              : 'Donanım hızlandırmalı yeniden kodlama';
+      _notify('Galeriye kaydedildi · $mode');
     } catch (error) {
       if (mounted) {
-        setState(() => _message = 'Dışa aktarma başarısız: $error');
+        _notify('Dışa aktarma başarısız: $error');
       }
     } finally {
       if (mounted) {
@@ -265,24 +341,35 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
     return Duration(microseconds: (seconds * 1000000).round());
   }
 
-  void _setMessage(String message) {
-    if (mounted) {
-      setState(() => _message = message);
-    }
-  }
-
   String _formatTime(double seconds) {
-    final total = seconds.round();
-    final hours = total ~/ 3600;
-    final minutes = (total % 3600) ~/ 60;
-    final secs = total % 60;
+    final totalTenths = (seconds * 10).round();
+    final totalSeconds = totalTenths ~/ 10;
+    final tenths = totalTenths % 10;
+    final hours = totalSeconds ~/ 3600;
+    final minutes = (totalSeconds % 3600) ~/ 60;
+    final secs = totalSeconds % 60;
+
     if (hours > 0) {
       return '${hours.toString().padLeft(2, '0')}:'
           '${minutes.toString().padLeft(2, '0')}:'
-          '${secs.toString().padLeft(2, '0')}';
+          '${secs.toString().padLeft(2, '0')}.$tenths';
     }
     return '${minutes.toString().padLeft(2, '0')}:'
-        '${secs.toString().padLeft(2, '0')}';
+        '${secs.toString().padLeft(2, '0')}.$tenths';
+  }
+
+  void _notify(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   @override
@@ -291,7 +378,11 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CMMR Cut'),
+        title: Text(
+          controller == null ? 'CMMR Cut' : (_fileName ?? 'CMMR Cut'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           if (controller != null)
             IconButton(
@@ -299,33 +390,58 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
               onPressed: _exporting ? null : _pickVideo,
               icon: const Icon(Icons.video_library_outlined),
             ),
+          if (controller != null)
+            IconButton.filled(
+              tooltip: 'Galeriye kaydet',
+              onPressed: _exporting ? null : _export,
+              icon: const Icon(Icons.check_rounded),
+            ),
+          const SizedBox(width: 8),
         ],
       ),
       body: controller == null
           ? _EmptyState(onPick: _pickVideo)
-          : _Editor(
-              controller: controller,
-              fileName: _fileName ?? 'Video',
-              trim: _trim,
-              crop: _crop,
-              cropEnabled: _cropEnabled,
-              fastTrim: _fastTrim,
-              exporting: _exporting,
-              progress: _progress,
-              message: _message,
-              formatTime: _formatTime,
-              onTogglePlayback: _togglePlayback,
-              onTrimChanged: _setTrim,
-              onTrimChangeEnd: (_) => _seekToTrimStart(),
-              onCropEnabledChanged: (value) {
-                setState(() => _cropEnabled = value);
+          : ValueListenableBuilder<VideoPlayerValue>(
+              valueListenable: controller,
+              builder: (context, value, _) {
+                final durationSeconds = math
+                    .max(
+                      0.001,
+                      value.duration.inMilliseconds / 1000.0,
+                    )
+                    .toDouble();
+                final positionSeconds =
+                    value.position.inMilliseconds / 1000.0;
+
+                return _Editor(
+                  controller: controller,
+                  value: value,
+                  durationSeconds: durationSeconds,
+                  positionSeconds: positionSeconds,
+                  trim: _trim,
+                  crop: _crop,
+                  cropEnabled: _cropEnabled,
+                  lockedNormalizedCropRatio: _lockedNormalizedCropRatio,
+                  cropAspectRatio: _cropAspectRatio,
+                  fastTrim: _fastTrim,
+                  tool: _tool,
+                  thumbnails: _thumbnails,
+                  exporting: _exporting,
+                  progress: _progress,
+                  formatTime: _formatTime,
+                  onTogglePlayback: _togglePlayback,
+                  onSeek: _seek,
+                  onTrimStartChanged: _setTrimStart,
+                  onTrimEndChanged: _setTrimEnd,
+                  onToolChanged: _selectTool,
+                  onCropChanged: (value) => setState(() => _crop = value),
+                  onCropPreset: _setCropPreset,
+                  onRemoveCrop: _removeCrop,
+                  onFastTrimChanged: (value) {
+                    setState(() => _fastTrim = value);
+                  },
+                );
               },
-              onCropChanged: (value) => setState(() => _crop = value),
-              onCropPreset: _setCropPreset,
-              onFastTrimChanged: (value) {
-                setState(() => _fastTrim = value);
-              },
-              onExport: _export,
             ),
     );
   }
@@ -356,8 +472,8 @@ class _EmptyState extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                'Videonun zamanını kısalt veya görüntünün yalnız istediğin '
-                'bölgesini bırak. Her şey cihazda işlenir.',
+                'Zamanı kes veya görüntü alanını kırp. '
+                'İşlem cihazda kalır.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       color: Colors.white70,
@@ -381,254 +497,387 @@ class _EmptyState extends StatelessWidget {
 class _Editor extends StatelessWidget {
   const _Editor({
     required this.controller,
-    required this.fileName,
+    required this.value,
+    required this.durationSeconds,
+    required this.positionSeconds,
     required this.trim,
     required this.crop,
     required this.cropEnabled,
+    required this.lockedNormalizedCropRatio,
+    required this.cropAspectRatio,
     required this.fastTrim,
+    required this.tool,
+    required this.thumbnails,
     required this.exporting,
     required this.progress,
-    required this.message,
     required this.formatTime,
     required this.onTogglePlayback,
-    required this.onTrimChanged,
-    required this.onTrimChangeEnd,
-    required this.onCropEnabledChanged,
+    required this.onSeek,
+    required this.onTrimStartChanged,
+    required this.onTrimEndChanged,
+    required this.onToolChanged,
     required this.onCropChanged,
     required this.onCropPreset,
+    required this.onRemoveCrop,
     required this.onFastTrimChanged,
-    required this.onExport,
   });
 
   final VideoPlayerController controller;
-  final String fileName;
+  final VideoPlayerValue value;
+  final double durationSeconds;
+  final double positionSeconds;
   final RangeValues trim;
   final Rect crop;
   final bool cropEnabled;
+  final double? lockedNormalizedCropRatio;
+  final double? cropAspectRatio;
   final bool fastTrim;
+  final _EditorTool tool;
+  final List<Uint8List?> thumbnails;
   final bool exporting;
   final double progress;
-  final String? message;
   final String Function(double) formatTime;
   final VoidCallback onTogglePlayback;
-  final ValueChanged<RangeValues> onTrimChanged;
-  final ValueChanged<RangeValues> onTrimChangeEnd;
-  final ValueChanged<bool> onCropEnabledChanged;
+  final ValueChanged<double> onSeek;
+  final ValueChanged<double> onTrimStartChanged;
+  final ValueChanged<double> onTrimEndChanged;
+  final ValueChanged<_EditorTool> onToolChanged;
   final ValueChanged<Rect> onCropChanged;
-  final ValueChanged<double> onCropPreset;
+  final ValueChanged<double?> onCropPreset;
+  final VoidCallback onRemoveCrop;
   final ValueChanged<bool> onFastTrimChanged;
-  final VoidCallback onExport;
 
   @override
   Widget build(BuildContext context) {
-    final durationSeconds = math
-        .max(0.001, controller.value.duration.inMilliseconds / 1000.0)
-        .toDouble();
+    final sourceAspect = value.size.height <= 0
+        ? 16 / 9
+        : value.size.width / value.size.height;
 
     return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      child: Column(
         children: [
-          Text(
-            fileName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 12),
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 430, maxWidth: 760),
-              child: AspectRatio(
-                aspectRatio: controller.value.aspectRatio == 0
-                    ? 16 / 9
-                    : controller.value.aspectRatio,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ColoredBox(
-                        color: Colors.black,
-                        child: VideoPlayer(controller),
-                      ),
-                      if (cropEnabled)
-                        CropOverlay(
-                          rect: crop,
-                          onChanged: onCropChanged,
-                        ),
-                      Center(
-                        child: IconButton.filledTonal(
-                          onPressed: exporting ? null : onTogglePlayback,
-                          iconSize: 34,
-                          icon: Icon(
-                            controller.value.isPlaying
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+          Expanded(
+            child: _VideoStage(
+              controller: controller,
+              aspectRatio: sourceAspect,
+              showCrop: tool == _EditorTool.crop && cropEnabled,
+              crop: crop,
+              lockedNormalizedCropRatio: lockedNormalizedCropRatio,
+              onCropChanged: onCropChanged,
+              onTapVideo:
+                  tool == _EditorTool.trim && !exporting ? onTogglePlayback : null,
             ),
           ),
-          const SizedBox(height: 22),
-          _Section(
-            title: 'Zaman',
+          Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF151B1F),
+              border: Border(
+                top: BorderSide(color: Color(0xFF2B3238)),
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                RangeSlider(
-                  min: 0,
-                  max: durationSeconds,
-                  values: RangeValues(
-                    trim.start.clamp(0, durationSeconds).toDouble(),
-                    trim.end.clamp(0, durationSeconds).toDouble(),
-                  ),
-                  labels: RangeLabels(
-                    formatTime(trim.start),
-                    formatTime(trim.end),
-                  ),
-                  onChanged: exporting ? null : onTrimChanged,
-                  onChangeEnd: exporting ? null : onTrimChangeEnd,
-                ),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(formatTime(trim.start)),
-                    Text(
-                      '${formatTime(trim.end - trim.start)} seçildi',
-                      style: const TextStyle(color: Colors.white70),
+                    IconButton.filledTonal(
+                      onPressed: exporting ? null : onTogglePlayback,
+                      icon: Icon(
+                        value.isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                      ),
                     ),
-                    Text(formatTime(trim.end)),
+                    const SizedBox(width: 8),
+                    Text(
+                      formatTime(positionSeconds),
+                      style: const TextStyle(
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${formatTime(trim.start)} — ${formatTime(trim.end)}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          _Section(
-            title: 'Görüntü alanı',
-            child: Column(
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Görüntüyü kırp'),
-                  subtitle: const Text(
-                    'Açınca beyaz çerçeveyi taşıyıp köşelerinden '
-                    'boyutlandırabilirsin.',
-                  ),
-                  value: cropEnabled,
-                  onChanged: exporting ? null : onCropEnabledChanged,
+                const SizedBox(height: 8),
+                TrimTimeline(
+                  durationSeconds: durationSeconds,
+                  startSeconds: trim.start,
+                  endSeconds: trim.end,
+                  positionSeconds: positionSeconds,
+                  thumbnails: thumbnails,
+                  onStartChanged: onTrimStartChanged,
+                  onEndChanged: onTrimEndChanged,
+                  onSeek: onSeek,
                 ),
-                if (cropEnabled)
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      ActionChip(
-                        label: const Text('1:1'),
-                        onPressed: exporting ? null : () => onCropPreset(1),
-                      ),
-                      ActionChip(
-                        label: const Text('4:5'),
-                        onPressed:
-                            exporting ? null : () => onCropPreset(4 / 5),
-                      ),
-                      ActionChip(
-                        label: const Text('9:16'),
-                        onPressed:
-                            exporting ? null : () => onCropPreset(9 / 16),
-                      ),
-                      ActionChip(
-                        label: const Text('16:9'),
-                        onPressed:
-                            exporting ? null : () => onCropPreset(16 / 9),
-                      ),
-                    ],
+                const SizedBox(height: 12),
+                SegmentedButton<_EditorTool>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(
+                      value: _EditorTool.trim,
+                      icon: Icon(Icons.content_cut_rounded),
+                      label: Text('Kes'),
+                    ),
+                    ButtonSegment(
+                      value: _EditorTool.crop,
+                      icon: Icon(Icons.crop_rounded),
+                      label: Text('Kırp'),
+                    ),
+                  ],
+                  selected: {tool},
+                  onSelectionChanged: exporting
+                      ? null
+                      : (selection) => onToolChanged(selection.first),
+                ),
+                const SizedBox(height: 10),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 160),
+                  child: tool == _EditorTool.trim
+                      ? _TrimControls(
+                          key: const ValueKey('trim'),
+                          fastTrim: fastTrim,
+                          cropEnabled: cropEnabled,
+                          exporting: exporting,
+                          onChanged: onFastTrimChanged,
+                        )
+                      : _CropControls(
+                          key: const ValueKey('crop'),
+                          sourceAspect: sourceAspect,
+                          selectedAspect: cropAspectRatio,
+                          exporting: exporting,
+                          onPreset: onCropPreset,
+                          onRemove: onRemoveCrop,
+                        ),
+                ),
+                if (exporting) ...[
+                  const SizedBox(height: 10),
+                  LinearProgressIndicator(
+                    value: progress > 0 ? progress : null,
                   ),
+                ],
               ],
             ),
           ),
-          const SizedBox(height: 14),
-          _Section(
-            title: 'İşleme',
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Hızlı trim'),
-              subtitle: Text(
-                cropEnabled
-                    ? 'Görüntü kırpma yeniden kodlama gerektirdiği için '
-                        'hızlı trim kullanılamaz.'
-                    : 'Yeniden kodlamadan keser; çok hızlıdır fakat başlangıç '
-                        'karesi en yakın keyframe’e kayabilir.',
-              ),
-              value: fastTrim && !cropEnabled,
-              onChanged: exporting || cropEnabled ? null : onFastTrimChanged,
-            ),
-          ),
-          const SizedBox(height: 18),
-          if (exporting) ...[
-            LinearProgressIndicator(value: progress > 0 ? progress : null),
-            const SizedBox(height: 10),
-            Text(
-              progress > 0
-                  ? 'İşleniyor · %${(progress * 100).round()}'
-                  : 'İşlem başlatılıyor…',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 14),
-          ],
-          FilledButton.icon(
-            onPressed: exporting ? null : onExport,
-            icon: const Icon(Icons.save_alt_rounded),
-            label: const Text('Kırp ve galeriye kaydet'),
-          ),
-          if (message != null) ...[
-            const SizedBox(height: 14),
-            Text(
-              message!,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: message!.startsWith('Dışa')
-                    ? Theme.of(context).colorScheme.error
-                    : Colors.white70,
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
 }
 
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child});
+class _VideoStage extends StatelessWidget {
+  const _VideoStage({
+    required this.controller,
+    required this.aspectRatio,
+    required this.showCrop,
+    required this.crop,
+    required this.lockedNormalizedCropRatio,
+    required this.onCropChanged,
+    required this.onTapVideo,
+  });
 
-  final String title;
-  final Widget child;
+  final VideoPlayerController controller;
+  final double aspectRatio;
+  final bool showCrop;
+  final Rect crop;
+  final double? lockedNormalizedCropRatio;
+  final ValueChanged<Rect> onCropChanged;
+  final VoidCallback? onTapVideo;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
+    return ColoredBox(
+      color: Colors.black,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxWidth = constraints.maxWidth;
+          final maxHeight = constraints.maxHeight;
+
+          var width = maxWidth;
+          var height = width / aspectRatio;
+          if (height > maxHeight) {
+            height = maxHeight;
+            width = height * aspectRatio;
+          }
+
+          return Center(
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onTapVideo,
+                    child: VideoPlayer(controller),
                   ),
+                  if (showCrop)
+                    CropOverlay(
+                      rect: crop,
+                      lockedNormalizedAspectRatio:
+                          lockedNormalizedCropRatio,
+                      onChanged: onCropChanged,
+                    ),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            child,
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _TrimControls extends StatelessWidget {
+  const _TrimControls({
+    required this.fastTrim,
+    required this.cropEnabled,
+    required this.exporting,
+    required this.onChanged,
+    super.key,
+  });
+
+  final bool fastTrim;
+  final bool cropEnabled;
+  final bool exporting;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final forcedExact = cropEnabled;
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: ChoiceChip(
+                label: const Text('Kayıpsız hızlı'),
+                selected: fastTrim && !forcedExact,
+                onSelected: exporting || forcedExact
+                    ? null
+                    : (_) => onChanged(true),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ChoiceChip(
+                label: const Text('Kare hassas'),
+                selected: !fastTrim || forcedExact,
+                onSelected:
+                    exporting ? null : (_) => onChanged(false),
+              ),
+            ),
           ],
         ),
-      ),
+        const SizedBox(height: 6),
+        Text(
+          forcedExact
+              ? 'Görüntü kırpma açık: yeniden kodlama zorunlu.'
+              : fastTrim
+                  ? 'Kalite kaybı yok; başlangıç keyframe’e kayabilir.'
+                  : 'Kesim hassas; seçilen bölüm yeniden kodlanır.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.white60,
+              ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+}
+
+class _CropControls extends StatelessWidget {
+  const _CropControls({
+    required this.sourceAspect,
+    required this.selectedAspect,
+    required this.exporting,
+    required this.onPreset,
+    required this.onRemove,
+    super.key,
+  });
+
+  final double sourceAspect;
+  final double? selectedAspect;
+  final bool exporting;
+  final ValueChanged<double?> onPreset;
+  final VoidCallback onRemove;
+
+  bool _selected(double value) {
+    final selected = selectedAspect;
+    return selected != null && (selected - value).abs() < 0.001;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          height: 42,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              ChoiceChip(
+                label: const Text('Serbest'),
+                selected: selectedAspect == null,
+                onSelected: exporting ? null : (_) => onPreset(null),
+              ),
+              const SizedBox(width: 7),
+              ChoiceChip(
+                label: const Text('Orijinal'),
+                selected: _selected(sourceAspect),
+                onSelected:
+                    exporting ? null : (_) => onPreset(sourceAspect),
+              ),
+              const SizedBox(width: 7),
+              for (final preset in const [
+                (1.0, '1:1'),
+                (4 / 5, '4:5'),
+                (3 / 4, '3:4'),
+                (9 / 16, '9:16'),
+                (16 / 9, '16:9'),
+              ]) ...[
+                ChoiceChip(
+                  avatar: _selected(preset.$1)
+                      ? const Icon(Icons.lock_rounded, size: 16)
+                      : null,
+                  label: Text(preset.$2),
+                  selected: _selected(preset.$1),
+                  onSelected:
+                      exporting ? null : (_) => onPreset(preset.$1),
+                ),
+                const SizedBox(width: 7),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            const Icon(Icons.open_with_rounded, size: 17, color: Colors.white54),
+            const SizedBox(width: 6),
+            const Expanded(
+              child: Text(
+                'İçeriden sürükle; köşelerin dokunma alanı büyütüldü.',
+                style: TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: exporting ? null : onRemove,
+              icon: const Icon(Icons.restart_alt_rounded, size: 18),
+              label: const Text('Kaldır'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
