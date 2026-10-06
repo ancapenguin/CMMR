@@ -107,6 +107,14 @@ class MediaExporter {
       }
     }
 
+    final hasGalleryAccess = await Gal.hasAccess(toAlbum: true);
+    if (!hasGalleryAccess) {
+      final granted = await Gal.requestAccess(toAlbum: true);
+      if (!granted) {
+        throw StateError('Galeriye yazma izni verilmedi.');
+      }
+    }
+
     await Gal.putVideo(outputPath, album: 'CMMR');
 
     return MediaExportResult(
