@@ -166,9 +166,14 @@ class _CropWorkspaceState extends State<CropWorkspace> {
         final focus = _clampFocus(_focus, scale);
 
         final matrix = Matrix4.identity()
-          ..translate(size.width / 2, size.height / 2)
-          ..scale(scale)
-          ..translate(-focus.dx * size.width, -focus.dy * size.height);
+          ..translateByDouble(size.width / 2, size.height / 2, 0, 1)
+          ..scaleByDouble(scale, scale, 1, 1)
+          ..translateByDouble(
+            -focus.dx * size.width,
+            -focus.dy * size.height,
+            0,
+            1,
+          );
 
         return ClipRect(
           child: Listener(
