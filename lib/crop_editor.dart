@@ -22,6 +22,7 @@ class CropEditor extends StatefulWidget {
     this.lockedNormalizedAspectRatio,
     this.onPrecisionPointChanged,
     this.onPrecisionEnd,
+    this.media,
     super.key,
   });
 
@@ -36,6 +37,9 @@ class CropEditor extends StatefulWidget {
 
   final ValueChanged<Offset>? onPrecisionPointChanged;
   final VoidCallback? onPrecisionEnd;
+
+  /// Test/alternate preview surface. Defaults to the video player.
+  final Widget? media;
 
   @override
   State<CropEditor> createState() => _CropEditorState();
@@ -210,7 +214,7 @@ class _CropEditorState extends State<CropEditor> {
                   fit: StackFit.expand,
                   children: [
                     const ColoredBox(color: Colors.black),
-                    VideoPlayer(widget.controller),
+                    widget.media ?? VideoPlayer(widget.controller),
                     _buildOverlay(size, scale),
                   ],
                 ),
