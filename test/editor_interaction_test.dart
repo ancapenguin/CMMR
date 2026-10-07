@@ -3,6 +3,7 @@ import 'package:cmmr/crop_overlay.dart';
 import 'package:cmmr/trim_timeline.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:video_player/video_player.dart';
 
 void main() {
   testWidgets('trim handle has a large hit target and updates the range',
