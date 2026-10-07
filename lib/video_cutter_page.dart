@@ -5,7 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
-import 'crop_workspace.dart';
+import 'crop_editor.dart';
 import 'media_exporter.dart';
 import 'timeline_thumbnail_service.dart';
 import 'trim_timeline.dart';
@@ -390,7 +390,6 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
               cropAspectRatio: _cropAspectRatio,
               cropPrecisionPoint: _cropPrecisionPoint,
               activeTool: _activeTool,
-              fastTrim: _fastTrim,
               exporting: _exporting,
               progress: _progress,
               message: _message,
@@ -417,9 +416,6 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
                 setState(() => _cropPrecisionPoint = null);
               },
               onResetCrop: _resetCrop,
-              onFastTrimChanged: (value) {
-                setState(() => _fastTrim = value);
-              },
             ),
     );
   }
@@ -481,7 +477,6 @@ class _Editor extends StatelessWidget {
     required this.cropAspectRatio,
     required this.cropPrecisionPoint,
     required this.activeTool,
-    required this.fastTrim,
     required this.exporting,
     required this.progress,
     required this.message,
@@ -497,7 +492,6 @@ class _Editor extends StatelessWidget {
     required this.onCropPrecisionPointChanged,
     required this.onCropPrecisionEnd,
     required this.onResetCrop,
-    required this.onFastTrimChanged,
   });
 
   final VideoPlayerController controller;
@@ -507,7 +501,6 @@ class _Editor extends StatelessWidget {
   final double? cropAspectRatio;
   final Offset? cropPrecisionPoint;
   final _EditorTool activeTool;
-  final bool fastTrim;
   final bool exporting;
   final double progress;
   final String? message;
@@ -523,7 +516,6 @@ class _Editor extends StatelessWidget {
   final ValueChanged<Offset> onCropPrecisionPointChanged;
   final VoidCallback onCropPrecisionEnd;
   final VoidCallback onResetCrop;
-  final ValueChanged<bool> onFastTrimChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -570,12 +562,12 @@ class _Editor extends StatelessWidget {
                       children: [
                             const ColoredBox(color: Colors.black),
                             if (activeTool == _EditorTool.crop)
-                              CropWorkspace(
+                              CropEditor(
                                 controller: controller,
                                 crop: crop,
                                 lockedNormalizedAspectRatio:
                                     lockedNormalizedAspectRatio,
-                                onCropChanged: onCropChanged,
+                                onChanged: onCropChanged,
                                 onPrecisionPointChanged:
                                     onCropPrecisionPointChanged,
                                 onPrecisionEnd: onCropPrecisionEnd,
@@ -676,23 +668,14 @@ class _Editor extends StatelessWidget {
                   onChanged: exporting ? null : onToolChanged,
                 ),
               ),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 160),
-                child: activeTool == _EditorTool.trim
-                    ? _TrimPanel(
-                        key: const ValueKey('trim'),
-                        fastTrim: fastTrim,
-                        cropEnabled: cropEnabled,
-                        onChanged: onFastTrimChanged,
-                      )
-                    : _CropPanel(
-                        key: const ValueKey('crop'),
-                        enabled: cropEnabled,
-                        aspectRatio: cropAspectRatio,
-                        onPreset: onCropPreset,
-                        onReset: onResetCrop,
-                      ),
-              ),
+              if (activeTool == _EditorTool.crop)
+                _CropPanel(
+                  key: const ValueKey('crop'),
+                  enabled: cropEnabled,
+                  aspectRatio: cropAspectRatio,
+                  onPreset: onCropPreset,
+                  onReset: onResetCrop,
+                ),
               if (exporting)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
@@ -1040,72 +1023,6 @@ class _ToolRail extends StatelessWidget {
             );
           },
         ),
-      ),
-    );
-  }
-}
-
-class _TrimPanel extends StatelessWidget {
-  const _TrimPanel({
-    required this.fastTrim,
-    required this.cropEnabled,
-    required this.onChanged,
-    super.key,
-  });
-
-  final bool fastTrim;
-  final bool cropEnabled;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final effectiveFast = fastTrim && !cropEnabled;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Text(
-                'Kesim',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Colors.white70,
-                    ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SegmentedButton<bool>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('Kesin')),
-                    ButtonSegment(value: true, label: Text('Hızlı')),
-                  ],
-                  selected: {effectiveFast},
-                  onSelectionChanged: cropEnabled
-                      ? null
-                      : (selection) => onChanged(selection.first),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              cropEnabled
-                  ? 'Kırpma açık · çıktı yeniden kodlanacak.'
-                  : effectiveFast
-                      ? 'Kayıpsız ve hızlı; başlangıç keyframe sınırına kayabilir.'
-                      : 'İstenen sınıra odaklanır; gerektiğinde yeniden kodlar.',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.white54,
-                  ),
-            ),
-          ),
-        ],
       ),
     );
   }
