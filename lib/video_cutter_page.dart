@@ -31,6 +31,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
   double? _cropAspectRatio;
   Offset? _cropPrecisionPoint;
   List<String> _timelineThumbnails = const [];
+  String? _scrubPreviewPath;
   _EditorTool _activeTool = _EditorTool.trim;
   bool _cropEnabled = false;
 
@@ -94,6 +95,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
       _fastTrim = false;
       _activeTool = _EditorTool.trim;
       _timelineThumbnails = const [];
+      _scrubPreviewPath = null;
       _message = null;
       _progress = 0;
     });
@@ -108,8 +110,13 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
   ) async {
     final seconds =
         duration.inMilliseconds / Duration.millisecondsPerSecond;
+    final thumbnailRate = seconds <= 30
+        ? 6.0
+        : seconds <= 120
+            ? 4.0
+            : 2.0;
     final thumbnailCount =
-        (seconds * 1.5).round().clamp(12, 80).toInt();
+        (seconds * thumbnailRate).round().clamp(18, 240).toInt();
 
     final thumbnails = await _thumbnailService.generate(
       inputPath: path,
@@ -177,6 +184,31 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
       }
     } finally {
       _seekLoopRunning = false;
+    }
+  }
+
+  void _previewScrub(double seconds) {
+    if (_timelineThumbnails.isEmpty || _controller == null) return;
+
+    final duration = math.max(
+      0.001,
+      _controller!.value.duration.inMilliseconds / 1000.0,
+    );
+    final progress = (seconds / duration).clamp(0.0, 1.0);
+    final index = (progress * (_timelineThumbnails.length - 1))
+        .round()
+        .clamp(0, _timelineThumbnails.length - 1);
+
+    final path = _timelineThumbnails[index];
+    if (_scrubPreviewPath != path) {
+      setState(() => _scrubPreviewPath = path);
+    }
+  }
+
+  Future<void> _finishScrub(double seconds) async {
+    await _seek(seconds);
+    if (mounted) {
+      setState(() => _scrubPreviewPath = null);
     }
   }
 
@@ -394,6 +426,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
               progress: _progress,
               message: _message,
               thumbnailPaths: _timelineThumbnails,
+              scrubPreviewPath: _scrubPreviewPath,
               onTogglePlayback: _togglePlayback,
               onStepBackward: () =>
                   _stepBy(const Duration(milliseconds: -100)),
@@ -401,6 +434,8 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
                   _stepBy(const Duration(milliseconds: 100)),
               onTrimChanged: _setTrim,
               onSeek: _seek,
+              onScrubPreview: _previewScrub,
+              onScrubEnd: _finishScrub,
               onToolChanged: _selectTool,
               onCropChanged: (value) {
                 setState(() {
@@ -481,11 +516,14 @@ class _Editor extends StatelessWidget {
     required this.progress,
     required this.message,
     required this.thumbnailPaths,
+    required this.scrubPreviewPath,
     required this.onTogglePlayback,
     required this.onStepBackward,
     required this.onStepForward,
     required this.onTrimChanged,
     required this.onSeek,
+    required this.onScrubPreview,
+    required this.onScrubEnd,
     required this.onToolChanged,
     required this.onCropChanged,
     required this.onCropPreset,
@@ -505,11 +543,14 @@ class _Editor extends StatelessWidget {
   final double progress;
   final String? message;
   final List<String> thumbnailPaths;
+  final String? scrubPreviewPath;
   final VoidCallback onTogglePlayback;
   final VoidCallback onStepBackward;
   final VoidCallback onStepForward;
   final ValueChanged<RangeValues> onTrimChanged;
   final ValueChanged<double> onSeek;
+  final ValueChanged<double> onScrubPreview;
+  final ValueChanged<double> onScrubEnd;
   final ValueChanged<_EditorTool> onToolChanged;
   final ValueChanged<Rect> onCropChanged;
   final ValueChanged<double?> onCropPreset;
@@ -561,7 +602,15 @@ class _Editor extends StatelessWidget {
                       fit: StackFit.expand,
                       children: [
                             const ColoredBox(color: Colors.black),
-                            if (activeTool == _EditorTool.crop)
+                            if (activeTool == _EditorTool.trim &&
+                                scrubPreviewPath != null)
+                              _ScrubFramePreview(
+                                imagePath: scrubPreviewPath!,
+                                crop: cropEnabled
+                                    ? crop
+                                    : const Rect.fromLTWH(0, 0, 1, 1),
+                              )
+                            else if (activeTool == _EditorTool.crop)
                               CropEditor(
                                 controller: controller,
                                 crop: crop,
@@ -657,6 +706,8 @@ class _Editor extends StatelessWidget {
                         thumbnailPaths: thumbnailPaths,
                         onRangeChanged: onTrimChanged,
                         onSeek: onSeek,
+                        onScrubPreview: onScrubPreview,
+                        onScrubEnd: onScrubEnd,
                       );
                     },
                   ),
@@ -714,6 +765,55 @@ class _Editor extends StatelessWidget {
                   ),
                 ),
             ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ScrubFramePreview extends StatelessWidget {
+  const _ScrubFramePreview({
+    required this.imagePath,
+    required this.crop,
+  });
+
+  final String imagePath;
+  final Rect crop;
+
+  @override
+  Widget build(BuildContext context) {
+    final safeWidth = crop.width.clamp(0.0001, 1.0).toDouble();
+    final safeHeight = crop.height.clamp(0.0001, 1.0).toDouble();
+
+    return ClipRect(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final fullWidth = constraints.maxWidth / safeWidth;
+          final fullHeight = constraints.maxHeight / safeHeight;
+
+          return OverflowBox(
+            alignment: Alignment.topLeft,
+            minWidth: 0,
+            minHeight: 0,
+            maxWidth: double.infinity,
+            maxHeight: double.infinity,
+            child: Transform.translate(
+              offset: Offset(
+                -crop.left * fullWidth,
+                -crop.top * fullHeight,
+              ),
+              child: SizedBox(
+                width: fullWidth,
+                height: fullHeight,
+                child: Image.file(
+                  File(imagePath),
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.low,
+                ),
+              ),
+            ),
           );
         },
       ),
