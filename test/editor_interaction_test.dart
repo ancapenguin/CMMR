@@ -1,3 +1,4 @@
+import 'package:cmmr/crop_editor.dart';
 import 'package:cmmr/crop_overlay.dart';
 import 'package:cmmr/trim_timeline.dart';
 import 'package:flutter/material.dart';
@@ -196,5 +197,100 @@ void main() {
     expect(bottomRight.bottom, lessThanOrEqualTo(canvas.bottom));
     expect(bottomRight.left, greaterThanOrEqualTo(canvas.left));
     expect(bottomRight.top, greaterThanOrEqualTo(canvas.top));
+  });
+
+  testWidgets('crop editor exposes edge and corner handles', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              var crop = const Rect.fromLTWH(0.2, 0.2, 0.6, 0.6);
+              return SizedBox(
+                width: 320,
+                height: 180,
+                child: CropEditor(
+                  controller: VideoPlayerController.networkUrl(
+                    Uri.parse('https://example.invalid/video.mp4'),
+                  ),
+                  media: const ColoredBox(color: Colors.black),
+                  crop: crop,
+                  onChanged: (value) => setState(() => crop = value),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    for (final name in [
+      'topLeft',
+      'top',
+      'topRight',
+      'right',
+      'bottomRight',
+      'bottom',
+      'bottomLeft',
+      'left',
+    ]) {
+      expect(find.byKey(ValueKey('crop-handle-$name')), findsOneWidget);
+    }
+  });
+
+  testWidgets('pinch out shrinks source crop and pinch in enlarges it',
+      (tester) async {
+    Rect crop = const Rect.fromLTWH(0.15, 0.15, 0.7, 0.7);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                width: 320,
+                height: 180,
+                child: CropEditor(
+                  controller: VideoPlayerController.networkUrl(
+                    Uri.parse('https://example.invalid/video.mp4'),
+                  ),
+                  media: const ColoredBox(color: Colors.black),
+                  crop: crop,
+                  onChanged: (value) => setState(() => crop = value),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    final editor = find.byKey(const ValueKey('crop-editor-transform'));
+    final center = tester.getCenter(editor);
+
+    final first =
+        await tester.startGesture(center + const Offset(-30, 0), pointer: 11);
+    final second =
+        await tester.startGesture(center + const Offset(30, 0), pointer: 12);
+    await tester.pump();
+
+    await first.moveTo(center + const Offset(-70, 0));
+    await second.moveTo(center + const Offset(70, 0));
+    await tester.pump();
+
+    final afterZoomIn = crop;
+    expect(afterZoomIn.width, lessThan(0.7));
+    expect(afterZoomIn.height, lessThan(0.7));
+
+    await first.moveTo(center + const Offset(-20, 0));
+    await second.moveTo(center + const Offset(20, 0));
+    await tester.pump();
+
+    expect(crop.width, greaterThan(afterZoomIn.width));
+    expect(crop.height, greaterThan(afterZoomIn.height));
+
+    await first.up();
+    await second.up();
+    await tester.pump();
   });
 }
