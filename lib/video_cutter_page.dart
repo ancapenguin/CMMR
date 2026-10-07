@@ -392,8 +392,14 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
 
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 52,
+        titleSpacing: 16,
+        titleTextStyle: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
         title: Text(
-          controller == null ? 'CMMR Cut' : (_fileName ?? 'Video'),
+          controller == null ? 'CMMR' : (_fileName ?? 'Video'),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -407,7 +413,7 @@ class _VideoCutterPageState extends State<VideoCutterPage> {
           if (controller != null)
             TextButton(
               onPressed: _exporting ? null : _export,
-              child: const Text('Kaydet'),
+              child: const Text('Dışa aktar'),
             ),
           const SizedBox(width: 4),
         ],
@@ -894,17 +900,21 @@ class _TransportBar extends StatelessWidget {
     return ValueListenableBuilder<VideoPlayerValue>(
       valueListenable: controller,
       builder: (context, value, _) {
-        final current = value.position;
-        final duration = value.duration;
-
         return SizedBox(
-          height: 42,
+          height: 40,
           child: Row(
             children: [
-              TextButton(
-                onPressed: disabled ? null : onStepBackward,
-                child: const Text('−0.1'),
+              SizedBox(
+                width: 88,
+                child: Text(
+                  _formatTransportTime(value.position),
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        color: Colors.white70,
+                      ),
+                ),
               ),
+              const Spacer(),
               IconButton.filledTonal(
                 tooltip: value.isPlaying ? 'Duraklat' : 'Oynat',
                 visualDensity: VisualDensity.compact,
@@ -915,21 +925,15 @@ class _TransportBar extends StatelessWidget {
                       : Icons.play_arrow_rounded,
                 ),
               ),
-              TextButton(
-                onPressed: disabled ? null : onStepForward,
-                child: const Text('+0.1'),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
+              const Spacer(),
+              SizedBox(
+                width: 88,
                 child: Text(
-                  '${_formatTransportTime(current)} / '
-                  '${_formatTransportTime(duration)}',
+                  _formatTransportTime(value.duration),
                   textAlign: TextAlign.end,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        fontFeatures: const [
-                          FontFeature.tabularFigures(),
-                        ],
-                        color: Colors.white70,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        color: Colors.white54,
                       ),
                 ),
               ),
@@ -1081,48 +1085,56 @@ class _ToolRail extends StatelessWidget {
     ];
 
     return SizedBox(
-      height: 58,
-      child: Align(
-        alignment: Alignment.center,
-        child: ListView.separated(
-          shrinkWrap: true,
-          scrollDirection: Axis.horizontal,
-          itemCount: tools.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 6),
-          itemBuilder: (context, index) {
-            final tool = tools[index];
-            final isSelected = selected == tool.$1;
+      height: 54,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        scrollDirection: Axis.horizontal,
+        itemCount: tools.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 4),
+        itemBuilder: (context, index) {
+          final tool = tools[index];
+          final isSelected = selected == tool.$1;
 
-            return Material(
-              color: isSelected
-                  ? Theme.of(context).colorScheme.primaryContainer
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(14),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: onChanged == null ? null : () => onChanged!(tool.$1),
-                child: SizedBox(
-                  width: 82,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(tool.$2, size: 22),
-                      const SizedBox(height: 3),
-                      Text(
-                        tool.$3,
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              fontWeight: isSelected
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                            ),
-                      ),
-                    ],
+          return InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: onChanged == null ? null : () => onChanged!(tool.$1),
+            child: SizedBox(
+              width: 72,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    tool.$2,
+                    size: 22,
+                    color: isSelected
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.white70,
                   ),
-                ),
+                  const SizedBox(height: 2),
+                  Text(
+                    tool.$3,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color:
+                              isSelected ? Colors.white : Colors.white60,
+                          fontWeight:
+                              isSelected ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 140),
+                    width: isSelected ? 28 : 0,
+                    height: 2,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ],
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }
