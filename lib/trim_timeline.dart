@@ -11,6 +11,8 @@ class TrimTimeline extends StatefulWidget {
     required this.thumbnailPaths,
     required this.onRangeChanged,
     required this.onSeek,
+    this.onScrubPreview,
+    this.onScrubEnd,
     super.key,
   });
 
@@ -20,6 +22,8 @@ class TrimTimeline extends StatefulWidget {
   final List<String> thumbnailPaths;
   final ValueChanged<RangeValues> onRangeChanged;
   final ValueChanged<double> onSeek;
+  final ValueChanged<double>? onScrubPreview;
+  final ValueChanged<double>? onScrubEnd;
 
   @override
   State<TrimTimeline> createState() => _TrimTimelineState();
@@ -183,6 +187,8 @@ class _TrimTimelineState extends State<TrimTimeline> {
                         pixelsPerSecond: pixelsPerSecond,
                         onRangeChanged: widget.onRangeChanged,
                         onSeek: widget.onSeek,
+                        onScrubPreview: widget.onScrubPreview,
+                        onScrubEnd: widget.onScrubEnd,
                       ),
                     ),
                   ),
@@ -222,7 +228,7 @@ class _TrimTimelineState extends State<TrimTimeline> {
   }
 }
 
-class _TimelineSurface extends StatelessWidget {
+class _TimelineSurface extends StatefulWidget {
   const _TimelineSurface({
     required this.durationSeconds,
     required this.range,
@@ -231,6 +237,8 @@ class _TimelineSurface extends StatelessWidget {
     required this.pixelsPerSecond,
     required this.onRangeChanged,
     required this.onSeek,
+    this.onScrubPreview,
+    this.onScrubEnd,
   });
 
   final double durationSeconds;
@@ -240,20 +248,44 @@ class _TimelineSurface extends StatelessWidget {
   final double pixelsPerSecond;
   final ValueChanged<RangeValues> onRangeChanged;
   final ValueChanged<double> onSeek;
+  final ValueChanged<double>? onScrubPreview;
+  final ValueChanged<double>? onScrubEnd;
+
+  @override
+  State<_TimelineSurface> createState() => _TimelineSurfaceState();
+}
+
+class _TimelineSurfaceState extends State<_TimelineSurface> {
+  double? _lastPreviewSeconds;
+
+  void _preview(double seconds) {
+    _lastPreviewSeconds = seconds;
+    widget.onScrubPreview?.call(seconds);
+  }
+
+  void _commitPreview() {
+    final seconds = _lastPreviewSeconds;
+    if (seconds == null) return;
+    widget.onScrubEnd?.call(seconds);
+    widget.onSeek(seconds);
+    _lastPreviewSeconds = null;
+  }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final startX = range.start / durationSeconds * width;
-        final endX = range.end / durationSeconds * width;
-        final playheadX =
-            positionSeconds.clamp(0.0, durationSeconds) / durationSeconds * width;
+        final startX = widget.range.start / widget.durationSeconds * width;
+        final endX = widget.range.end / widget.durationSeconds * width;
+        final playheadX = widget.positionSeconds
+                .clamp(0.0, widget.durationSeconds) /
+            widget.durationSeconds *
+            width;
 
         double secondsForX(double x) {
-          return (x.clamp(0.0, width) / width * durationSeconds)
-              .clamp(range.start, range.end)
+          return (x.clamp(0.0, width) / width * widget.durationSeconds)
+              .clamp(widget.range.start, widget.range.end)
               .toDouble();
         }
 
@@ -267,16 +299,24 @@ class _TimelineSurface extends StatelessWidget {
               height: _TrimTimelineState._trackHeight,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTapDown: (details) =>
-                    onSeek(secondsForX(details.localPosition.dx)),
-                onHorizontalDragUpdate: (details) =>
-                    onSeek(secondsForX(details.localPosition.dx)),
+                onTapDown: (details) {
+                  _preview(secondsForX(details.localPosition.dx));
+                },
+                onTapUp: (_) => _commitPreview(),
+                onHorizontalDragStart: (details) {
+                  _preview(secondsForX(details.localPosition.dx));
+                },
+                onHorizontalDragUpdate: (details) {
+                  _preview(secondsForX(details.localPosition.dx));
+                },
+                onHorizontalDragEnd: (_) => _commitPreview(),
+                onHorizontalDragCancel: _commitPreview,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      _Filmstrip(paths: thumbnailPaths),
+                      _Filmstrip(paths: widget.thumbnailPaths),
                       Positioned(
                         left: 0,
                         width: startX,
@@ -293,7 +333,9 @@ class _TimelineSurface extends StatelessWidget {
                       ),
                       Positioned(
                         left: startX,
-                        width: (endX - startX).clamp(0.0, width).toDouble(),
+                        width: (endX - startX)
+                            .clamp(0.0, width)
+                            .toDouble(),
                         top: 0,
                         bottom: 0,
                         child: const IgnorePointer(
@@ -324,29 +366,31 @@ class _TimelineSurface extends StatelessWidget {
               centerX: startX,
               width: width,
               isStart: true,
-              value: range.start,
+              value: widget.range.start,
               minValue: 0,
-              maxValue:
-                  range.end - _TrimTimelineState._minimumSelectionSeconds,
-              durationSeconds: durationSeconds,
+              maxValue: widget.range.end -
+                  _TrimTimelineState._minimumSelectionSeconds,
+              durationSeconds: widget.durationSeconds,
               onChanged: (next) {
-                onRangeChanged(RangeValues(next, range.end));
-                onSeek(next);
+                widget.onRangeChanged(RangeValues(next, widget.range.end));
+                _preview(next);
               },
+              onEnd: _commitPreview,
             ),
             _TrimHandle(
               centerX: endX,
               width: width,
               isStart: false,
-              value: range.end,
-              minValue:
-                  range.start + _TrimTimelineState._minimumSelectionSeconds,
-              maxValue: durationSeconds,
-              durationSeconds: durationSeconds,
+              value: widget.range.end,
+              minValue: widget.range.start +
+                  _TrimTimelineState._minimumSelectionSeconds,
+              maxValue: widget.durationSeconds,
+              durationSeconds: widget.durationSeconds,
               onChanged: (next) {
-                onRangeChanged(RangeValues(range.start, next));
-                onSeek(next);
+                widget.onRangeChanged(RangeValues(widget.range.start, next));
+                _preview(next);
               },
+              onEnd: _commitPreview,
             ),
             Positioned(
               left: 0,
@@ -356,8 +400,8 @@ class _TimelineSurface extends StatelessWidget {
               child: IgnorePointer(
                 child: CustomPaint(
                   painter: _TimeRulerPainter(
-                    durationSeconds: durationSeconds,
-                    pixelsPerSecond: pixelsPerSecond,
+                    durationSeconds: widget.durationSeconds,
+                    pixelsPerSecond: widget.pixelsPerSecond,
                     textColor: Colors.white60,
                   ),
                 ),
@@ -418,6 +462,7 @@ class _TrimHandle extends StatefulWidget {
     required this.maxValue,
     required this.durationSeconds,
     required this.onChanged,
+    required this.onEnd,
   });
 
   final double centerX;
@@ -428,6 +473,7 @@ class _TrimHandle extends StatefulWidget {
   final double maxValue;
   final double durationSeconds;
   final ValueChanged<double> onChanged;
+  final VoidCallback onEnd;
 
   @override
   State<_TrimHandle> createState() => _TrimHandleState();
@@ -469,6 +515,8 @@ class _TrimHandleState extends State<_TrimHandle> {
         behavior: HitTestBehavior.opaque,
         onHorizontalDragStart: _startDrag,
         onHorizontalDragUpdate: _updateDrag,
+        onHorizontalDragEnd: (_) => widget.onEnd(),
+        onHorizontalDragCancel: widget.onEnd,
         child: Align(
           alignment: widget.centerX <= _TrimTimelineState._handleHitWidth / 2
               ? Alignment.centerLeft
