@@ -55,6 +55,7 @@ class _CropEditorState extends State<CropEditor> {
   Offset _gestureStartFocal = Offset.zero;
   Offset _gestureAnchorSource = Offset.zero;
   double _gestureStartDisplayScale = 1;
+  double _gestureStartGestureScale = 1;
   bool _scaling = false;
 
   Rect _dragStartCrop = Rect.zero;
@@ -142,27 +143,35 @@ class _CropEditorState extends State<CropEditor> {
   }
 
   void _scaleStart(ScaleStartDetails details, Size size) {
-    if (details.pointerCount < 2) return;
-
-    _gestureStartCrop = widget.crop;
-    _gestureStartFocal = details.localFocalPoint;
-    _gestureStartDisplayScale = _displayScale(widget.crop);
-    _gestureAnchorSource = _sourceAtScreen(
-      details.localFocalPoint,
-      size,
-      widget.crop,
-      _gestureStartDisplayScale,
-    );
-    _scaling = true;
+    _scaling = false;
   }
 
   void _scaleUpdate(ScaleUpdateDetails details, Size size) {
-    if (!_scaling || details.pointerCount < 2) return;
+    if (details.pointerCount < 2) return;
+
+    if (!_scaling) {
+      _gestureStartCrop = widget.crop;
+      _gestureStartFocal = details.localFocalPoint;
+      _gestureStartDisplayScale = _displayScale(widget.crop);
+      _gestureStartGestureScale =
+          details.scale.abs() < 0.0001 ? 1 : details.scale;
+      _gestureAnchorSource = _sourceAtScreen(
+        details.localFocalPoint,
+        size,
+        widget.crop,
+        _gestureStartDisplayScale,
+      );
+      _scaling = true;
+      return;
+    }
+
+    final relativeScale =
+        (details.scale / _gestureStartGestureScale).clamp(0.2, 20.0);
 
     var next = _scaleCropAround(
       _gestureStartCrop,
       _gestureAnchorSource,
-      details.scale,
+      relativeScale,
     );
 
     final screenDelta = details.localFocalPoint - _gestureStartFocal;
