@@ -51,11 +51,13 @@ class _CropEditorState extends State<CropEditor> {
   static const _maxDisplayScale = 8.0;
   static const _hitSize = 54.0;
 
+  final Map<int, Offset> _pointers = <int, Offset>{};
+
   Rect _gestureStartCrop = Rect.zero;
   Offset _gestureStartFocal = Offset.zero;
   Offset _gestureAnchorSource = Offset.zero;
   double _gestureStartDisplayScale = 1;
-  double _gestureStartGestureScale = 1;
+  double _gestureStartDistance = 0;
   bool _scaling = false;
 
   Rect _dragStartCrop = Rect.zero;
@@ -142,31 +144,52 @@ class _CropEditorState extends State<CropEditor> {
     return Rect.fromLTWH(left, top, crop.width, crop.height);
   }
 
-  void _scaleStart(ScaleStartDetails details, Size size) {
-    _scaling = false;
-  }
+  void _pointerDown(PointerDownEvent event, Size size) {
+    _pointers[event.pointer] = event.localPosition;
 
-  void _scaleUpdate(ScaleUpdateDetails details, Size size) {
-    if (details.pointerCount < 2) return;
+    if (_pointers.length == 2) {
+      final points = _pointers.values.take(2).toList(growable: false);
+      final distance = (points[0] - points[1]).distance;
+      if (distance <= 0) return;
 
-    if (!_scaling) {
+      final focal = Offset(
+        (points[0].dx + points[1].dx) / 2,
+        (points[0].dy + points[1].dy) / 2,
+      );
+
       _gestureStartCrop = widget.crop;
-      _gestureStartFocal = details.localFocalPoint;
+      _gestureStartFocal = focal;
       _gestureStartDisplayScale = _displayScale(widget.crop);
-      _gestureStartGestureScale =
-          details.scale.abs() < 0.0001 ? 1 : details.scale;
+      _gestureStartDistance = distance;
       _gestureAnchorSource = _sourceAtScreen(
-        details.localFocalPoint,
+        focal,
         size,
         widget.crop,
         _gestureStartDisplayScale,
       );
       _scaling = true;
+    }
+  }
+
+  void _pointerMove(PointerMoveEvent event, Size size) {
+    if (!_pointers.containsKey(event.pointer)) return;
+    _pointers[event.pointer] = event.localPosition;
+
+    if (!_scaling || _pointers.length < 2 || _gestureStartDistance <= 0) {
       return;
     }
 
+    final points = _pointers.values.take(2).toList(growable: false);
+    final distance = (points[0] - points[1]).distance;
+    if (distance <= 0) return;
+
+    final focal = Offset(
+      (points[0].dx + points[1].dx) / 2,
+      (points[0].dy + points[1].dy) / 2,
+    );
+
     final relativeScale =
-        (details.scale / _gestureStartGestureScale).clamp(0.2, 20.0);
+        (distance / _gestureStartDistance).clamp(0.2, 20.0).toDouble();
 
     var next = _scaleCropAround(
       _gestureStartCrop,
@@ -174,7 +197,7 @@ class _CropEditorState extends State<CropEditor> {
       relativeScale,
     );
 
-    final screenDelta = details.localFocalPoint - _gestureStartFocal;
+    final screenDelta = focal - _gestureStartFocal;
     final sourceDelta = Offset(
       -screenDelta.dx / (size.width * _gestureStartDisplayScale),
       -screenDelta.dy / (size.height * _gestureStartDisplayScale),
@@ -184,8 +207,12 @@ class _CropEditorState extends State<CropEditor> {
     widget.onChanged(next);
   }
 
-  void _scaleEnd(ScaleEndDetails details) {
-    _scaling = false;
+  void _pointerUp(PointerEvent event) {
+    _pointers.remove(event.pointer);
+    if (_pointers.length < 2) {
+      _scaling = false;
+      _gestureStartDistance = 0;
+    }
   }
 
   @override
@@ -207,11 +234,12 @@ class _CropEditorState extends State<CropEditor> {
           );
 
         return ClipRect(
-          child: GestureDetector(
+          child: Listener(
             behavior: HitTestBehavior.opaque,
-            onScaleStart: (details) => _scaleStart(details, size),
-            onScaleUpdate: (details) => _scaleUpdate(details, size),
-            onScaleEnd: _scaleEnd,
+            onPointerDown: (event) => _pointerDown(event, size),
+            onPointerMove: (event) => _pointerMove(event, size),
+            onPointerUp: _pointerUp,
+            onPointerCancel: _pointerUp,
             child: Transform(
               key: const ValueKey('crop-editor-transform'),
               alignment: Alignment.topLeft,
