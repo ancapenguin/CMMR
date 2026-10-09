@@ -126,8 +126,12 @@ class _TrimTimelineState extends State<TrimTimeline> {
     final seconds =
         _pendingPreviewSeconds ?? _secondsForOffset(_scrollController.offset);
     _pendingPreviewSeconds = null;
-    widget.onScrubEnd?.call(seconds);
-    widget.onSeek(seconds);
+    final onScrubEnd = widget.onScrubEnd;
+    if (onScrubEnd != null) {
+      onScrubEnd(seconds);
+    } else {
+      widget.onSeek(seconds);
+    }
   }
 
   bool _onScrollNotification(ScrollNotification notification) {
@@ -284,7 +288,11 @@ class _TrimTimelineState extends State<TrimTimeline> {
                                   top: 0,
                                   width: contentWidth,
                                   height: 96,
-                                  child: _TimelineContent(
+                                  child: SizedBox(
+                                    key: const ValueKey('trim-timeline-content'),
+                                    width: contentWidth,
+                                    height: 96,
+                                    child: _TimelineContent(
                                     durationSeconds: safeDuration,
                                     range: widget.range,
                                     thumbnailPaths: widget.thumbnailPaths,
@@ -296,9 +304,14 @@ class _TrimTimelineState extends State<TrimTimeline> {
                                     },
                                     onCommit: (seconds) {
                                       _pendingPreviewSeconds = null;
-                                      widget.onScrubEnd?.call(seconds);
-                                      widget.onSeek(seconds);
+                                      final onScrubEnd = widget.onScrubEnd;
+                                      if (onScrubEnd != null) {
+                                        onScrubEnd(seconds);
+                                      } else {
+                                        widget.onSeek(seconds);
+                                      }
                                     },
+                                    ),
                                   ),
                                 ),
                               ],
