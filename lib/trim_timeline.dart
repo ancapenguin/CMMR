@@ -40,11 +40,28 @@ class _TrimTimelineState extends State<TrimTimeline> {
   double _zoom = 1;
   double _viewportWidth = 1;
   double _maxZoom = 1;
+
   double _pinchStartZoom = 1;
   double _pinchStartDistance = 0;
   double _pinchAnchorSeconds = 0;
   double _pinchAnchorX = 0;
+
   bool _pinching = false;
+  bool _userScrolling = false;
+  double? _pendingPreviewSeconds;
+
+  @override
+  void didUpdateWidget(covariant TrimTimeline oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (!_userScrolling &&
+        !_pinching &&
+        (oldWidget.positionSeconds - widget.positionSeconds).abs() > 0.0001) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _syncScrollToPosition(widget.positionSeconds);
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -52,15 +69,89 @@ class _TrimTimelineState extends State<TrimTimeline> {
     super.dispose();
   }
 
+  double _safeDuration() {
+    return widget.durationSeconds <= 0 ? 0.001 : widget.durationSeconds;
+  }
+
+  double _contentWidth() => _viewportWidth * _zoom;
+
   double _computeMaxZoom(double viewportWidth) {
     if (widget.durationSeconds <= 0 || viewportWidth <= 0) return 1;
 
-    // At maximum zoom aim for roughly 160 logical pixels per second.
-    // This is enough for comfortable sub-second placement without letting a
-    // long clip create an effectively unbounded scroll surface.
+    // Roughly 180 logical px / second at maximum, capped so long videos
+    // cannot create absurdly large scroll surfaces.
     final desired =
-        (widget.durationSeconds * 160 / viewportWidth).clamp(1.0, 40.0);
+        (widget.durationSeconds * 180 / viewportWidth).clamp(1.0, 48.0);
     return desired.toDouble();
+  }
+
+  double _secondsForOffset(double offset) {
+    final duration = _safeDuration();
+    final width = _contentWidth();
+    if (width <= 0) return 0;
+
+    return (offset / width * duration)
+        .clamp(0.0, duration)
+        .toDouble();
+  }
+
+  double _offsetForSeconds(double seconds) {
+    final duration = _safeDuration();
+    return (seconds.clamp(0.0, duration) / duration) * _contentWidth();
+  }
+
+  void _syncScrollToPosition(double seconds) {
+    if (!mounted || !_scrollController.hasClients) return;
+
+    final target = _offsetForSeconds(seconds)
+        .clamp(0.0, _scrollController.position.maxScrollExtent)
+        .toDouble();
+
+    if ((_scrollController.offset - target).abs() > 0.75) {
+      _scrollController.jumpTo(target);
+    }
+  }
+
+  void _previewAtCurrentOffset() {
+    if (!_scrollController.hasClients) return;
+
+    final seconds = _secondsForOffset(_scrollController.offset);
+    _pendingPreviewSeconds = seconds;
+    widget.onScrubPreview?.call(seconds);
+  }
+
+  void _commitCurrentOffset() {
+    if (!_scrollController.hasClients) return;
+
+    final seconds =
+        _pendingPreviewSeconds ?? _secondsForOffset(_scrollController.offset);
+    _pendingPreviewSeconds = null;
+    widget.onScrubEnd?.call(seconds);
+    widget.onSeek(seconds);
+  }
+
+  bool _onScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _userScrolling = true;
+      _previewAtCurrentOffset();
+      setState(() {});
+      return false;
+    }
+
+    if (notification is ScrollUpdateNotification && _userScrolling) {
+      _previewAtCurrentOffset();
+      return false;
+    }
+
+    if (notification is ScrollEndNotification && _userScrolling) {
+      _userScrolling = false;
+      _commitCurrentOffset();
+      setState(() {});
+      return false;
+    }
+
+    return false;
   }
 
   void _pointerDown(PointerDownEvent event) {
@@ -81,10 +172,12 @@ class _TrimTimelineState extends State<TrimTimeline> {
 
   void _pointerUp(PointerEvent event) {
     _pointers.remove(event.pointer);
-    if (_pointers.length < 2) {
+
+    if (_pointers.length < 2 && _pinching) {
       _pinching = false;
       _pinchStartDistance = 0;
-      if (mounted) setState(() {});
+      setState(() {});
+      _commitCurrentOffset();
     }
   }
 
@@ -96,19 +189,18 @@ class _TrimTimelineState extends State<TrimTimeline> {
     final centerX = (points[0].dx + points[1].dx) / 2;
     final offset =
         _scrollController.hasClients ? _scrollController.offset : 0.0;
-    final contentWidth = _viewportWidth * _zoom;
+    final mediaX = offset + centerX - _viewportWidth / 2;
+    final contentWidth = _contentWidth();
 
     _pinching = true;
     _pinchStartZoom = _zoom;
     _pinchStartDistance = distance;
     _pinchAnchorX = centerX;
-    _pinchAnchorSeconds = widget.durationSeconds <= 0
-        ? 0
-        : ((offset + centerX) / contentWidth * widget.durationSeconds)
-            .clamp(0.0, widget.durationSeconds)
-            .toDouble();
+    _pinchAnchorSeconds = (mediaX / contentWidth * _safeDuration())
+        .clamp(0.0, _safeDuration())
+        .toDouble();
 
-    if (mounted) setState(() {});
+    setState(() {});
   }
 
   void _updatePinch() {
@@ -127,24 +219,21 @@ class _TrimTimelineState extends State<TrimTimeline> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
 
-      final contentWidth = _viewportWidth * _zoom;
-      final anchorContentX = widget.durationSeconds <= 0
-          ? 0.0
-          : (_pinchAnchorSeconds / widget.durationSeconds) * contentWidth;
-      final target = (anchorContentX - _pinchAnchorX)
-          .clamp(
-            0.0,
-            math.max(0.0, _scrollController.position.maxScrollExtent),
-          )
+      final newMediaX =
+          (_pinchAnchorSeconds / _safeDuration()) * _contentWidth();
+      final target = (_viewportWidth / 2 + newMediaX - _pinchAnchorX)
+          .clamp(0.0, _scrollController.position.maxScrollExtent)
           .toDouble();
+
       _scrollController.jumpTo(target);
+      _previewAtCurrentOffset();
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 122,
+      height: 116,
       child: LayoutBuilder(
         builder: (context, constraints) {
           _viewportWidth = math.max(1.0, constraints.maxWidth);
@@ -154,44 +243,94 @@ class _TrimTimelineState extends State<TrimTimeline> {
             _zoom = _maxZoom;
           }
 
-          final safeDuration =
-              widget.durationSeconds <= 0 ? 0.001 : widget.durationSeconds;
-          final contentWidth = _viewportWidth * _zoom;
+          final safeDuration = _safeDuration();
+          final contentWidth = _contentWidth();
           final pixelsPerSecond = contentWidth / safeDuration;
+          final sidePadding = _viewportWidth / 2;
+
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!_userScrolling && !_pinching) {
+              _syncScrollToPosition(widget.positionSeconds);
+            }
+          });
 
           return Column(
             children: [
               Expanded(
-                child: Listener(
-                  behavior: HitTestBehavior.translucent,
-                  onPointerDown: _pointerDown,
-                  onPointerMove: _pointerMove,
-                  onPointerUp: _pointerUp,
-                  onPointerCancel: _pointerUp,
-                  child: SingleChildScrollView(
-                    key: const ValueKey('trim-timeline-scroll'),
-                    controller: _scrollController,
-                    scrollDirection: Axis.horizontal,
-                    physics: _pinching || _zoom <= 1.02
-                        ? const NeverScrollableScrollPhysics()
-                        : const ClampingScrollPhysics(),
-                    child: SizedBox(
-                      key: const ValueKey('trim-timeline-content'),
-                      width: contentWidth,
-                      height: 98,
-                      child: _TimelineSurface(
-                        durationSeconds: safeDuration,
-                        range: widget.range,
-                        positionSeconds: widget.positionSeconds,
-                        thumbnailPaths: widget.thumbnailPaths,
-                        pixelsPerSecond: pixelsPerSecond,
-                        onRangeChanged: widget.onRangeChanged,
-                        onSeek: widget.onSeek,
-                        onScrubPreview: widget.onScrubPreview,
-                        onScrubEnd: widget.onScrubEnd,
+                child: Stack(
+                  children: [
+                    Listener(
+                      behavior: HitTestBehavior.translucent,
+                      onPointerDown: _pointerDown,
+                      onPointerMove: _pointerMove,
+                      onPointerUp: _pointerUp,
+                      onPointerCancel: _pointerUp,
+                      child: NotificationListener<ScrollNotification>(
+                        onNotification: _onScrollNotification,
+                        child: SingleChildScrollView(
+                          key: const ValueKey('trim-timeline-scroll'),
+                          controller: _scrollController,
+                          scrollDirection: Axis.horizontal,
+                          physics: _pinching
+                              ? const NeverScrollableScrollPhysics()
+                              : const ClampingScrollPhysics(),
+                          child: SizedBox(
+                            height: 96,
+                            width: contentWidth + _viewportWidth,
+                            child: Stack(
+                              children: [
+                                Positioned(
+                                  left: sidePadding,
+                                  top: 0,
+                                  width: contentWidth,
+                                  height: 96,
+                                  child: _TimelineContent(
+                                    durationSeconds: safeDuration,
+                                    range: widget.range,
+                                    thumbnailPaths: widget.thumbnailPaths,
+                                    pixelsPerSecond: pixelsPerSecond,
+                                    onRangeChanged: widget.onRangeChanged,
+                                    onPreview: (seconds) {
+                                      _pendingPreviewSeconds = seconds;
+                                      widget.onScrubPreview?.call(seconds);
+                                    },
+                                    onCommit: (seconds) {
+                                      _pendingPreviewSeconds = null;
+                                      widget.onScrubEnd?.call(seconds);
+                                      widget.onSeek(seconds);
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    Positioned(
+                      left: _viewportWidth / 2 - 1,
+                      top: 0,
+                      width: 2,
+                      height: _trackHeight + 9,
+                      child: IgnorePointer(
+                        child: ColoredBox(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: _viewportWidth / 2 - 5,
+                      top: 0,
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          size: const Size(10, 7),
+                          painter: _PlayheadCapPainter(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 2),
@@ -203,20 +342,18 @@ class _TrimTimelineState extends State<TrimTimeline> {
                   ),
                   Expanded(
                     child: Text(
-                      '${_formatTime(widget.range.end - widget.range.start, precise: _zoom >= 2)} seçili',
+                      _zoom > 1.02
+                          ? '×${_zoom.toStringAsFixed(_zoom < 10 ? 1 : 0)}'
+                          : '${_formatTime(widget.range.end - widget.range.start)} seçili',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: Colors.white70,
+                            color: Colors.white60,
                           ),
                     ),
                   ),
                   Text(
-                    _zoom > 1.02
-                        ? '×${_zoom.toStringAsFixed(_zoom < 10 ? 1 : 0)}'
-                        : _formatTime(widget.range.end),
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: _zoom > 1.02 ? Colors.white70 : null,
-                        ),
+                    _formatTime(widget.range.end, precise: _zoom >= 2),
+                    style: Theme.of(context).textTheme.labelMedium,
                   ),
                 ],
               ),
@@ -228,66 +365,32 @@ class _TrimTimelineState extends State<TrimTimeline> {
   }
 }
 
-class _TimelineSurface extends StatefulWidget {
-  const _TimelineSurface({
+class _TimelineContent extends StatelessWidget {
+  const _TimelineContent({
     required this.durationSeconds,
     required this.range,
-    required this.positionSeconds,
     required this.thumbnailPaths,
     required this.pixelsPerSecond,
     required this.onRangeChanged,
-    required this.onSeek,
-    this.onScrubPreview,
-    this.onScrubEnd,
+    required this.onPreview,
+    required this.onCommit,
   });
 
   final double durationSeconds;
   final RangeValues range;
-  final double positionSeconds;
   final List<String> thumbnailPaths;
   final double pixelsPerSecond;
   final ValueChanged<RangeValues> onRangeChanged;
-  final ValueChanged<double> onSeek;
-  final ValueChanged<double>? onScrubPreview;
-  final ValueChanged<double>? onScrubEnd;
-
-  @override
-  State<_TimelineSurface> createState() => _TimelineSurfaceState();
-}
-
-class _TimelineSurfaceState extends State<_TimelineSurface> {
-  double? _lastPreviewSeconds;
-
-  void _preview(double seconds) {
-    _lastPreviewSeconds = seconds;
-    widget.onScrubPreview?.call(seconds);
-  }
-
-  void _commitPreview() {
-    final seconds = _lastPreviewSeconds;
-    if (seconds == null) return;
-    widget.onScrubEnd?.call(seconds);
-    widget.onSeek(seconds);
-    _lastPreviewSeconds = null;
-  }
+  final ValueChanged<double> onPreview;
+  final ValueChanged<double> onCommit;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final startX = widget.range.start / widget.durationSeconds * width;
-        final endX = widget.range.end / widget.durationSeconds * width;
-        final playheadX = widget.positionSeconds
-                .clamp(0.0, widget.durationSeconds) /
-            widget.durationSeconds *
-            width;
-
-        double secondsForX(double x) {
-          return (x.clamp(0.0, width) / width * widget.durationSeconds)
-              .clamp(widget.range.start, widget.range.end)
-              .toDouble();
-        }
+        final startX = range.start / durationSeconds * width;
+        final endX = range.end / durationSeconds * width;
 
         return Stack(
           clipBehavior: Clip.none,
@@ -297,68 +400,51 @@ class _TimelineSurfaceState extends State<_TimelineSurface> {
               right: 0,
               top: 2,
               height: _TrimTimelineState._trackHeight,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapDown: (details) {
-                  _preview(secondsForX(details.localPosition.dx));
-                },
-                onTapUp: (_) => _commitPreview(),
-                onHorizontalDragStart: (details) {
-                  _preview(secondsForX(details.localPosition.dx));
-                },
-                onHorizontalDragUpdate: (details) {
-                  _preview(secondsForX(details.localPosition.dx));
-                },
-                onHorizontalDragEnd: (_) => _commitPreview(),
-                onHorizontalDragCancel: _commitPreview,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _Filmstrip(paths: widget.thumbnailPaths),
-                      Positioned(
-                        left: 0,
-                        width: startX,
-                        top: 0,
-                        bottom: 0,
-                        child: const ColoredBox(color: Color(0xAA000000)),
-                      ),
-                      Positioned(
-                        left: endX,
-                        right: 0,
-                        top: 0,
-                        bottom: 0,
-                        child: const ColoredBox(color: Color(0xAA000000)),
-                      ),
-                      Positioned(
-                        left: startX,
-                        width: (endX - startX)
-                            .clamp(0.0, width)
-                            .toDouble(),
-                        top: 0,
-                        bottom: 0,
-                        child: const IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: Color(0x12000000),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _Filmstrip(paths: thumbnailPaths),
+                    Positioned(
+                      left: 0,
+                      width: startX,
+                      top: 0,
+                      bottom: 0,
+                      child: const ColoredBox(color: Color(0xB0000000)),
+                    ),
+                    Positioned(
+                      left: endX,
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: const ColoredBox(color: Color(0xB0000000)),
+                    ),
+                    Positioned(
+                      left: startX,
+                      width: (endX - startX).clamp(0.0, width).toDouble(),
+                      top: 0,
+                      bottom: 0,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            border: Border(
+                              top: BorderSide(
+                                color:
+                                    Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
+                              bottom: BorderSide(
+                                color:
+                                    Theme.of(context).colorScheme.primary,
+                                width: 2,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              left: (playheadX - 1).clamp(0.0, width - 2).toDouble(),
-              top: 0,
-              width: 2,
-              height: _TrimTimelineState._trackHeight + 8,
-              child: IgnorePointer(
-                child: ColoredBox(
-                  color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -366,43 +452,43 @@ class _TimelineSurfaceState extends State<_TimelineSurface> {
               centerX: startX,
               width: width,
               isStart: true,
-              value: widget.range.start,
+              value: range.start,
               minValue: 0,
-              maxValue: widget.range.end -
-                  _TrimTimelineState._minimumSelectionSeconds,
-              durationSeconds: widget.durationSeconds,
+              maxValue:
+                  range.end - _TrimTimelineState._minimumSelectionSeconds,
+              durationSeconds: durationSeconds,
               onChanged: (next) {
-                widget.onRangeChanged(RangeValues(next, widget.range.end));
-                _preview(next);
+                onRangeChanged(RangeValues(next, range.end));
+                onPreview(next);
               },
-              onEnd: _commitPreview,
+              onEnd: (next) => onCommit(next),
             ),
             _TrimHandle(
               centerX: endX,
               width: width,
               isStart: false,
-              value: widget.range.end,
-              minValue: widget.range.start +
-                  _TrimTimelineState._minimumSelectionSeconds,
-              maxValue: widget.durationSeconds,
-              durationSeconds: widget.durationSeconds,
+              value: range.end,
+              minValue:
+                  range.start + _TrimTimelineState._minimumSelectionSeconds,
+              maxValue: durationSeconds,
+              durationSeconds: durationSeconds,
               onChanged: (next) {
-                widget.onRangeChanged(RangeValues(widget.range.start, next));
-                _preview(next);
+                onRangeChanged(RangeValues(range.start, next));
+                onPreview(next);
               },
-              onEnd: _commitPreview,
+              onEnd: (next) => onCommit(next),
             ),
             Positioned(
               left: 0,
               right: 0,
               top: 80,
-              height: 18,
+              height: 16,
               child: IgnorePointer(
                 child: CustomPaint(
                   painter: _TimeRulerPainter(
-                    durationSeconds: widget.durationSeconds,
-                    pixelsPerSecond: widget.pixelsPerSecond,
-                    textColor: Colors.white60,
+                    durationSeconds: durationSeconds,
+                    pixelsPerSecond: pixelsPerSecond,
+                    textColor: Colors.white54,
                   ),
                 ),
               ),
@@ -473,7 +559,7 @@ class _TrimHandle extends StatefulWidget {
   final double maxValue;
   final double durationSeconds;
   final ValueChanged<double> onChanged;
-  final VoidCallback onEnd;
+  final ValueChanged<double> onEnd;
 
   @override
   State<_TrimHandle> createState() => _TrimHandleState();
@@ -482,9 +568,11 @@ class _TrimHandle extends StatefulWidget {
 class _TrimHandleState extends State<_TrimHandle> {
   double _dragStartValue = 0;
   double _dragDx = 0;
+  double _lastValue = 0;
 
   void _startDrag(DragStartDetails details) {
     _dragStartValue = widget.value;
+    _lastValue = widget.value;
     _dragDx = 0;
   }
 
@@ -494,6 +582,7 @@ class _TrimHandleState extends State<_TrimHandle> {
             (_dragDx / widget.width) * widget.durationSeconds)
         .clamp(widget.minValue, widget.maxValue)
         .toDouble();
+    _lastValue = next;
     widget.onChanged(next);
   }
 
@@ -515,8 +604,8 @@ class _TrimHandleState extends State<_TrimHandle> {
         behavior: HitTestBehavior.opaque,
         onHorizontalDragStart: _startDrag,
         onHorizontalDragUpdate: _updateDrag,
-        onHorizontalDragEnd: (_) => widget.onEnd(),
-        onHorizontalDragCancel: widget.onEnd,
+        onHorizontalDragEnd: (_) => widget.onEnd(_lastValue),
+        onHorizontalDragCancel: () => widget.onEnd(_lastValue),
         child: Align(
           alignment: widget.centerX <= _TrimTimelineState._handleHitWidth / 2
               ? Alignment.centerLeft
@@ -536,7 +625,7 @@ class _TrimHandleState extends State<_TrimHandle> {
               boxShadow: const [
                 BoxShadow(
                   color: Color(0x55000000),
-                  blurRadius: 6,
+                  blurRadius: 5,
                 ),
               ],
             ),
@@ -544,6 +633,28 @@ class _TrimHandleState extends State<_TrimHandle> {
         ),
       ),
     );
+  }
+}
+
+class _PlayheadCapPainter extends CustomPainter {
+  const _PlayheadCapPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..close();
+
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PlayheadCapPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }
 
@@ -596,9 +707,10 @@ class _TimeRulerPainter extends CustomPainter {
 
       final x = seconds * pixelsPerSecond;
       final major = i % 5 == 0;
+
       canvas.drawLine(
         Offset(x, 0),
-        Offset(x, major ? 7 : 4),
+        Offset(x, major ? 6 : 3),
         linePaint,
       );
 
@@ -617,7 +729,7 @@ class _TimeRulerPainter extends CustomPainter {
         maxLines: 1,
       )..layout();
 
-      painter.paint(canvas, Offset(x + 3, 8));
+      painter.paint(canvas, Offset(x + 3, 7));
     }
   }
 
