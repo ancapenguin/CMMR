@@ -94,6 +94,47 @@ void main() {
     await tester.pump();
   });
 
+
+  testWidgets('fixed playhead timeline scrubs while filmstrip moves',
+      (tester) async {
+    double? previewed;
+    double? committed;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 400,
+              height: 130,
+              child: TrimTimeline(
+                durationSeconds: 20,
+                range: const RangeValues(0, 20),
+                positionSeconds: 0,
+                thumbnailPaths: const [],
+                onRangeChanged: (_) {},
+                onSeek: (_) {},
+                onScrubPreview: (value) => previewed = value,
+                onScrubEnd: (value) => committed = value,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    final scroll = find.byKey(const ValueKey('trim-timeline-scroll'));
+
+    await tester.drag(scroll, const Offset(-100, 0));
+    await tester.pumpAndSettle();
+
+    expect(previewed, isNotNull);
+    expect(previewed!, closeTo(5, 0.75));
+    expect(committed, isNotNull);
+    expect(committed!, closeTo(5, 0.75));
+  });
+
   testWidgets('locked crop handle keeps its ratio and remains easy to grab',
       (tester) async {
     Rect? changed;
