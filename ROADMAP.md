@@ -205,6 +205,23 @@ If CMMR becomes large enough to justify it:
 
 Do not build a plugin system before there are multiple real extension use cases.
 
+
+## Parallel vertical — Terminal and personal compute
+
+This does not need to wait for the entire media roadmap.
+
+Build it as an isolated CMMR vertical behind a `TerminalSession` boundary:
+
+- terminal renderer and session tabs,
+- SSH backend for PC/VPS,
+- localhost Termux backend for a full Linux userspace without immediately embedding/forking Termux,
+- later local PTY / embedded runtime experiments,
+- agent launchers such as OpenCode once the terminal/runtime foundation is reliable.
+
+See `docs/TERMINAL.md`.
+
+The terminal must not become a hard dependency of the media editor.
+
 ## Phase 10 — Distribution and updates
 
 Trigger: real repeated usage makes manual installs annoying.
